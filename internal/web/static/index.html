@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PostIt Web</title>
+    <style>
+        :root {
+            --bg-dark: #1e1e1e;
+            --bg-sidebar: #252526;
+            --border: #333;
+            --text: #d4d4d4;
+            --accent: #0e639c;
+            --yellow: #dcdcaa;
+            --green: #4ec9b0;
+        }
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #sidebar {
+            width: 300px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+        }
+        #sidebar-header {
+            padding: 15px;
+            font-weight: bold;
+            border-bottom: 1px solid var(--border);
+            color: var(--yellow);
+        }
+        #request-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+        .request-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+        }
+        .request-item:hover { background: #2a2d2e; }
+        .request-item.active { background: #37373d; }
+        .method {
+            font-weight: bold;
+            margin-right: 10px;
+            font-size: 10px;
+            min-width: 40px;
+        }
+        .method.POST { color: var(--yellow); }
+        .method.GET { color: var(--green); }
+
+        #main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        #request-editor {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        #response-panel {
+            height: 40%;
+            border-top: 1px solid var(--border);
+            background: #1a1a1a;
+            padding: 15px;
+            overflow: auto;
+        }
+        .section-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #888;
+            margin-bottom: 5px;
+        }
+        pre {
+            margin: 0;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+        }
+        input, textarea {
+            background: #3c3c3c;
+            border: 1px solid var(--border);
+            color: white;
+            padding: 8px;
+            border-radius: 2px;
+        }
+        button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            cursor: pointer;
+            border-radius: 2px;
+        }
+        button:hover { background: #1177bb; }
+        #toolbar {
+            padding: 10px 20px;
+            background: var(--bg-sidebar);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .url-bar { flex: 1; display: flex; gap: 5px; }
+        .url-bar input { flex: 1; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <div id="sidebar-header">PostIt Collections</div>
+        <div id="request-list"></div>
+    </div>
+    <div id="main">
+        <div id="toolbar">
+            <div class="url-bar">
+                <input type="text" id="req-method" style="width: 60px;" readonly>
+                <input type="text" id="req-url" readonly>
+            </div>
+            <button onclick="sendRequest()">Send</button>
+        </div>
+        <div id="request-editor">
+            <div>
+                <div class="section-title">Body</div>
+                <textarea id="req-body" style="width: 100%; height: 150px; resize: none;"></textarea>
+            </div>
+            <div>
+                <div class="section-title">Headers</div>
+                <div id="req-headers" style="font-size: 12px; color: #aaa;"></div>
+            </div>
+        </div>
+        <div id="response-panel">
+            <div class="section-title">Response</div>
+            <pre id="resp-body"></pre>
+        </div>
+    </div>
+
+    <script>
+        let requests = [];
+        let currentRequest = null;
+
+        async function init() {
+            const resp = await fetch('/api/requests');
+            requests = await resp.json();
+            renderList();
+        }
+
+        function renderList() {
+            const list = document.getElementById('request-list');
+            list.innerHTML = '';
+            requests.forEach((req, idx) => {
+                const div = document.createElement('div');
+                div.className = 'request-item';
+                div.innerHTML = `<span class="method ${req.request.method}">${req.request.method}</span> ${req.path}`;
+                div.onclick = () => selectRequest(idx);
+                list.appendChild(div);
+            });
+        }
+
+        function selectRequest(idx) {
+            currentRequest = requests[idx];
+            document.querySelectorAll('.request-item').forEach((el, i) => {
+                el.classList.toggle('active', i === idx);
+            });
+            document.getElementById('req-method').value = currentRequest.request.method;
+            document.getElementById('req-url').value = currentRequest.request.url.raw;
+            document.getElementById('req-body').value = currentRequest.request.body ? currentRequest.request.body.raw : '';
+            
+            const hDiv = document.getElementById('req-headers');
+            hDiv.innerHTML = (currentRequest.request.header || []).map(h => `<div>${h.key}: ${h.value}</div>`).join('');
+        }
+
+        async function sendRequest() {
+            if (!currentRequest) return;
+            
+            const respBody = document.getElementById('resp-body');
+            respBody.textContent = 'Sending...';
+
+            // Update body from UI before sending
+            if (currentRequest.request.body) {
+                currentRequest.request.body.raw = document.getElementById('req-body').value;
+            }
+
+            const resp = await fetch('/api/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: currentRequest.path, body: document.getElementById('req-body').value })
+            });
+            
+            const data = await resp.json();
+            try {
+                respBody.textContent = JSON.stringify(JSON.parse(data.body), null, 2);
+            } catch {
+                respBody.textContent = data.body;
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
