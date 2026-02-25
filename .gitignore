@@ -1,0 +1,21 @@
+# Binaries
+*.exe
+postit
+postit.exe
+
+# Collection
+dx4b.postman_collection.json
+
+# Output folder (contains local edits and sensitive variables/tokens)
+output/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# Go specific
+go.sum
