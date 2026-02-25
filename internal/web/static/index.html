@@ -270,6 +270,7 @@
     <script>
         let flatRequests = [];
         let currentRequest = null;
+        let responseCache = {}; // Cache responses for the session
 
         async function init() {
             try {
@@ -345,8 +346,15 @@
                 `<div style="margin-bottom: 5px;"><span style="color:var(--postman-orange)">${h.key}:</span> ${h.value}</div>`
             ).join('');
 
-            document.getElementById('response-body').textContent = '// Ready';
-            document.getElementById('response-meta').textContent = '';
+            // Restore from session cache
+            const cached = responseCache[path];
+            if (cached) {
+                document.getElementById('response-body').textContent = cached.body;
+                document.getElementById('response-meta').innerHTML = cached.meta;
+            } else {
+                document.getElementById('response-body').textContent = '// Ready';
+                document.getElementById('response-meta').textContent = '';
+            }
         }
 
         function switchTab(tabName) {
@@ -371,12 +379,20 @@
                 const data = await resp.json();
                 const duration = Date.now() - startTime;
                 
-                metaElem.innerHTML = `<span>Time: ${duration}ms</span>`;
+                let metaHtml = `<span>Time: ${duration}ms</span>`;
+                let bodyHtml = data.body;
                 try {
-                    respBodyElem.textContent = JSON.stringify(JSON.parse(data.body), null, 2);
-                } catch {
-                    respBodyElem.textContent = data.body;
-                }
+                    bodyHtml = JSON.stringify(JSON.parse(data.body), null, 2);
+                } catch {}
+
+                // Save to session cache
+                responseCache[currentRequest.path] = {
+                    body: bodyHtml,
+                    meta: metaHtml
+                };
+
+                metaElem.innerHTML = metaHtml;
+                respBodyElem.textContent = bodyHtml;
             } catch (e) {
                 respBodyElem.textContent = '// Error: ' + e.message;
             }
