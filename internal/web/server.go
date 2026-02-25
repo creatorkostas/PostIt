@@ -15,27 +15,26 @@ import (
 var staticAssets embed.FS
 
 type Server struct {
-	Storage   *storage.Manager
-	Processor *processor.ScriptProcessor
-	Client    *api.Client
-	Requests  []models.RequestInfo
+	Storage    *storage.Manager
+	Processor  *processor.ScriptProcessor
+	Client     *api.Client
+	Collection models.Collection
+	FlatList   []models.RequestInfo
 }
 
-func NewServer(store *storage.Manager, proc *processor.ScriptProcessor, client *api.Client, reqs []models.RequestInfo) *Server {
+func NewServer(store *storage.Manager, proc *processor.ScriptProcessor, client *api.Client, col models.Collection, flat []models.RequestInfo) *Server {
 	return &Server{
-		Storage:   store,
-		Processor: proc,
-		Client:    client,
-		Requests:  reqs,
+		Storage:    store,
+		Processor:  proc,
+		Client:     client,
+		Collection: col,
+		FlatList:   flat,
 	}
 }
 
 func (s *Server) Start(port int) error {
-	// API Endpoints
 	http.HandleFunc("/api/requests", s.handleGetRequests)
 	http.HandleFunc("/api/send", s.handleSendRequest)
-
-	// Static Files
 	http.Handle("/", http.FileServer(http.FS(staticAssets)))
 
 	fmt.Printf("Web UI started at http://localhost:%d\n", port)
@@ -44,7 +43,12 @@ func (s *Server) Start(port int) error {
 
 func (s *Server) handleGetRequests(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(s.Requests)
+	// Send both nested tree and flat list for easy access
+	response := map[string]interface{}{
+		"collection": s.Collection,
+		"flat":       s.FlatList,
+	}
+	json.NewEncoder(w).Encode(response)
 }
 
 func (s *Server) handleSendRequest(w http.ResponseWriter, r *http.Request) {
@@ -57,9 +61,8 @@ func (s *Server) handleSendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find the request
 	var target *models.RequestInfo
-	for _, req := range s.Requests {
+	for _, req := range s.FlatList {
 		if req.Path == input.Path {
 			target = &req
 			break
@@ -71,18 +74,15 @@ func (s *Server) handleSendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update body from UI if provided
 	if target.Request.Body != nil && input.Body != "" {
 		target.Request.Body.Raw = input.Body
 	}
 
-	// Run Scripts and Execute
 	s.Processor.RunScripts(target.Events, "prerequest", nil, nil, target.Request.Header)
 	s.Processor.RunScripts(target.Events, "test", nil, nil, target.Request.Header)
 
 	body, headers := s.Client.ExecuteRequest(target.Request)
 	
-	// Run Post-request scripts
 	if body != "" {
 		s.Processor.RunScripts(target.Events, "test", []byte(body), headers, target.Request.Header)
 	}

@@ -3,205 +3,382 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PostIt Web</title>
+    <title>PostIt - Web Client</title>
     <style>
         :root {
-            --bg-dark: #1e1e1e;
-            --bg-sidebar: #252526;
-            --border: #333;
-            --text: #d4d4d4;
-            --accent: #0e639c;
-            --yellow: #dcdcaa;
-            --green: #4ec9b0;
+            --bg-app: #1c1c1c;
+            --bg-sidebar: #212121;
+            --bg-item-hover: #2a2a2a;
+            --bg-item-active: #333333;
+            --border-color: #333333;
+            --text-main: #e6e6e6;
+            --text-secondary: #a6a6a6;
+            --postman-orange: #ff6c37;
+            --method-get: #0cbb52;
+            --method-post: #ffb400;
+            --method-put: #097bed;
+            --method-delete: #eb2013;
         }
+
         body {
             margin: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: var(--bg-dark);
-            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg-app);
+            color: var(--text-main);
             display: flex;
             height: 100vh;
             overflow: hidden;
         }
+
+        /* Sidebar */
         #sidebar {
-            width: 300px;
+            width: 350px;
             background: var(--bg-sidebar);
-            border-right: 1px solid var(--border);
+            border-right: 1px solid var(--border-color);
             display: flex;
             flex-direction: column;
+            min-width: 250px;
         }
+
         #sidebar-header {
-            padding: 15px;
-            font-weight: bold;
-            border-bottom: 1px solid var(--border);
-            color: var(--yellow);
+            padding: 16px;
+            font-size: 14px;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--postman-orange);
         }
-        #request-list {
+
+        #collection-tree {
             flex: 1;
             overflow-y: auto;
+            padding: 10px 0;
         }
-        .request-item {
-            padding: 10px 15px;
+
+        .folder {
+            padding: 5px 15px;
             cursor: pointer;
-            border-bottom: 1px solid var(--border);
+            font-weight: 600;
             font-size: 13px;
+            color: var(--text-secondary);
             display: flex;
             align-items: center;
+            gap: 8px;
         }
-        .request-item:hover { background: #2a2d2e; }
-        .request-item.active { background: #37373d; }
-        .method {
-            font-weight: bold;
-            margin-right: 10px;
-            font-size: 10px;
-            min-width: 40px;
-        }
-        .method.POST { color: var(--yellow); }
-        .method.GET { color: var(--green); }
+        .folder::before { content: '📁'; font-size: 10px; }
+        .folder.expanded::before { content: '📂'; }
 
+        .folder-content {
+            padding-left: 15px;
+            display: none;
+        }
+        .folder-content.show { display: block; }
+
+        .request-item {
+            padding: 6px 15px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .request-item:hover { background: var(--bg-item-hover); }
+        .request-item.active { background: var(--bg-item-active); border-left: 2px solid var(--postman-orange); }
+
+        .method-tag {
+            font-size: 9px;
+            font-weight: 800;
+            width: 35px;
+            flex-shrink: 0;
+        }
+        .method-GET { color: var(--method-get); }
+        .method-POST { color: var(--method-post); }
+        .method-PUT { color: var(--method-put); }
+        .method-DELETE { color: var(--method-delete); }
+
+        /* Main Content */
         #main {
             flex: 1;
             display: flex;
             flex-direction: column;
+            min-width: 0;
         }
-        #request-editor {
+
+        /* URL Bar */
+        #request-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .url-bar-container {
+            display: flex;
+            width: 100%;
+            height: 40px;
+            background: #2d2d2d;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        #req-method-display {
+            padding: 0 15px;
+            font-weight: bold;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            border-right: 1px solid var(--border-color);
+            background: #333;
+            min-width: 60px;
+            justify-content: center;
+        }
+
+        #req-url-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            padding: 0 12px;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            outline: none;
+            min-width: 0;
+        }
+
+        #send-btn {
+            background: var(--postman-orange);
+            color: white;
+            border: none;
+            padding: 0 30px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 13px;
+            transition: opacity 0.2s;
+        }
+        #send-btn:hover { opacity: 0.9; }
+
+        /* Tabs & Editors */
+        .tabs {
+            display: flex;
+            gap: 20px;
+            border-bottom: 1px solid var(--border-color);
+            padding: 0 20px;
+        }
+        .tab {
+            padding: 12px 0;
+            font-size: 13px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+        .tab.active {
+            color: var(--text-main);
+            border-bottom: 2px solid var(--postman-orange);
+        }
+
+        #editor-container {
             flex: 1;
             padding: 20px;
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            overflow: hidden;
         }
-        #response-panel {
+        .pane { display: none; height: 100%; }
+        .pane.active { display: flex; flex-direction: column; }
+
+        textarea {
+            flex: 1;
+            background: #181818;
+            border: 1px solid var(--border-color);
+            color: #dcdcaa;
+            padding: 15px;
+            font-family: 'Consolas', monospace;
+            font-size: 14px;
+            resize: none;
+            outline: none;
+        }
+
+        /* Response */
+        #response-container {
             height: 40%;
-            border-top: 1px solid var(--border);
-            background: #1a1a1a;
+            background: #181818;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+        #response-header {
+            padding: 10px 20px;
+            font-size: 12px;
+            color: #888;
+            display: flex;
+            justify-content: space-between;
+            background: #212121;
+        }
+        #response-body {
+            flex: 1;
             padding: 15px;
             overflow: auto;
-        }
-        .section-title {
-            font-size: 12px;
-            text-transform: uppercase;
-            color: #888;
-            margin-bottom: 5px;
-        }
-        pre {
-            margin: 0;
             font-family: 'Consolas', monospace;
             font-size: 13px;
+            color: #4ec9b0;
+            white-space: pre-wrap;
+            margin: 0;
         }
-        input, textarea {
-            background: #3c3c3c;
-            border: 1px solid var(--border);
-            color: white;
-            padding: 8px;
-            border-radius: 2px;
-        }
-        button {
-            background: var(--accent);
-            color: white;
-            border: none;
-            padding: 8px 20px;
-            cursor: pointer;
-            border-radius: 2px;
-        }
-        button:hover { background: #1177bb; }
-        #toolbar {
-            padding: 10px 20px;
-            background: var(--bg-sidebar);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .url-bar { flex: 1; display: flex; gap: 5px; }
-        .url-bar input { flex: 1; }
     </style>
 </head>
 <body>
     <div id="sidebar">
-        <div id="sidebar-header">PostIt Collections</div>
-        <div id="request-list"></div>
+        <div id="sidebar-header">COLLECTIONS</div>
+        <div id="collection-tree">
+            <!-- Tree will be injected here -->
+        </div>
     </div>
+
     <div id="main">
-        <div id="toolbar">
-            <div class="url-bar">
-                <input type="text" id="req-method" style="width: 60px;" readonly>
-                <input type="text" id="req-url" readonly>
-            </div>
-            <button onclick="sendRequest()">Send</button>
-        </div>
-        <div id="request-editor">
-            <div>
-                <div class="section-title">Body</div>
-                <textarea id="req-body" style="width: 100%; height: 150px; resize: none;"></textarea>
-            </div>
-            <div>
-                <div class="section-title">Headers</div>
-                <div id="req-headers" style="font-size: 12px; color: #aaa;"></div>
+        <div id="request-header">
+            <div class="url-bar-container">
+                <div id="req-method-display">GET</div>
+                <input type="text" id="req-url-input" spellcheck="false" placeholder="Enter request URL">
+                <button id="send-btn" onclick="sendRequest()">Send</button>
             </div>
         </div>
-        <div id="response-panel">
-            <div class="section-title">Response</div>
-            <pre id="resp-body"></pre>
+
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('body')">Body</div>
+            <div class="tab" onclick="switchTab('headers')">Headers</div>
+        </div>
+
+        <div id="editor-container">
+            <div id="pane-body" class="pane active">
+                <textarea id="req-body-input" spellcheck="false"></textarea>
+            </div>
+            <div id="pane-headers" class="pane">
+                <div id="req-headers-list" style="font-size: 12px; font-family: monospace;"></div>
+            </div>
+        </div>
+
+        <div id="response-container">
+            <div id="response-header">
+                <span>RESPONSE</span>
+                <div id="response-meta"></div>
+            </div>
+            <pre id="response-body">// Select a request and hit Send</pre>
         </div>
     </div>
 
     <script>
-        let requests = [];
+        let flatRequests = [];
         let currentRequest = null;
 
         async function init() {
-            const resp = await fetch('/api/requests');
-            requests = await resp.json();
-            renderList();
+            try {
+                const resp = await fetch('/api/requests');
+                const data = await resp.json();
+                flatRequests = data.flat;
+                const treeContainer = document.getElementById('collection-tree');
+                treeContainer.innerHTML = '';
+                if (data.collection && data.collection.item) {
+                    renderTree(treeContainer, data.collection.item, "");
+                }
+            } catch (e) {
+                console.error("Failed to load requests", e);
+            }
         }
 
-        function renderList() {
-            const list = document.getElementById('request-list');
-            list.innerHTML = '';
-            requests.forEach((req, idx) => {
-                const div = document.createElement('div');
-                div.className = 'request-item';
-                div.innerHTML = `<span class="method ${req.request.method}">${req.request.method}</span> ${req.path}`;
-                div.onclick = () => selectRequest(idx);
-                list.appendChild(div);
+        function renderTree(container, items, pathPrefix) {
+            if (!items) return;
+            items.forEach(item => {
+                const currentPath = pathPrefix ? `${pathPrefix} > ${item.name}` : item.name;
+                
+                if (item.item && item.item.length > 0) {
+                    // It's a folder
+                    const folderDiv = document.createElement('div');
+                    folderDiv.className = 'folder';
+                    folderDiv.textContent = item.name;
+                    
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'folder-content';
+                    
+                    folderDiv.onclick = (e) => {
+                        e.stopPropagation();
+                        folderDiv.classList.toggle('expanded');
+                        contentDiv.classList.toggle('show');
+                    };
+                    
+                    container.appendChild(folderDiv);
+                    container.appendChild(contentDiv);
+                    renderTree(contentDiv, item.item, currentPath);
+                } else if (item.request) {
+                    // It's a request
+                    const reqDiv = document.createElement('div');
+                    reqDiv.className = 'request-item';
+                    reqDiv.dataset.path = currentPath;
+                    reqDiv.innerHTML = `
+                        <span class="method-tag method-${item.request.method}">${item.request.method}</span>
+                        <span>${item.name}</span>
+                    `;
+                    reqDiv.onclick = (e) => {
+                        e.stopPropagation();
+                        selectRequest(currentPath);
+                    };
+                    container.appendChild(reqDiv);
+                }
             });
         }
 
-        function selectRequest(idx) {
-            currentRequest = requests[idx];
-            document.querySelectorAll('.request-item').forEach((el, i) => {
-                el.classList.toggle('active', i === idx);
+        function selectRequest(path) {
+            currentRequest = flatRequests.find(r => r.path === path);
+            if (!currentRequest) return;
+
+            document.querySelectorAll('.request-item').forEach(el => {
+                el.classList.toggle('active', el.dataset.path === path);
             });
-            document.getElementById('req-method').value = currentRequest.request.method;
-            document.getElementById('req-url').value = currentRequest.request.url.raw;
-            document.getElementById('req-body').value = currentRequest.request.body ? currentRequest.request.body.raw : '';
+
+            document.getElementById('req-method-display').textContent = currentRequest.request.method;
+            document.getElementById('req-method-display').className = `method-${currentRequest.request.method}`;
+            document.getElementById('req-url-input').value = currentRequest.request.url.raw;
+            document.getElementById('req-body-input').value = currentRequest.request.body ? currentRequest.request.body.raw : '';
             
-            const hDiv = document.getElementById('req-headers');
-            hDiv.innerHTML = (currentRequest.request.header || []).map(h => `<div>${h.key}: ${h.value}</div>`).join('');
+            const hDiv = document.getElementById('req-headers-list');
+            hDiv.innerHTML = (currentRequest.request.header || []).map(h => 
+                `<div style="margin-bottom: 5px;"><span style="color:var(--postman-orange)">${h.key}:</span> ${h.value}</div>`
+            ).join('');
+
+            document.getElementById('response-body').textContent = '// Ready';
+            document.getElementById('response-meta').textContent = '';
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase() === tabName));
+            document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === `pane-${tabName}`));
         }
 
         async function sendRequest() {
             if (!currentRequest) return;
+            const respBodyElem = document.getElementById('response-body');
+            const metaElem = document.getElementById('response-meta');
             
-            const respBody = document.getElementById('resp-body');
-            respBody.textContent = 'Sending...';
+            respBodyElem.textContent = '// Sending...';
+            const startTime = Date.now();
 
-            // Update body from UI before sending
-            if (currentRequest.request.body) {
-                currentRequest.request.body.raw = document.getElementById('req-body').value;
-            }
-
-            const resp = await fetch('/api/send', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: currentRequest.path, body: document.getElementById('req-body').value })
-            });
-            
-            const data = await resp.json();
             try {
-                respBody.textContent = JSON.stringify(JSON.parse(data.body), null, 2);
-            } catch {
-                respBody.textContent = data.body;
+                const resp = await fetch('/api/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: currentRequest.path, body: document.getElementById('req-body-input').value })
+                });
+                const data = await resp.json();
+                const duration = Date.now() - startTime;
+                
+                metaElem.innerHTML = `<span>Time: ${duration}ms</span>`;
+                try {
+                    respBodyElem.textContent = JSON.stringify(JSON.parse(data.body), null, 2);
+                } catch {
+                    respBodyElem.textContent = data.body;
+                }
+            } catch (e) {
+                respBodyElem.textContent = '// Error: ' + e.message;
             }
         }
 
