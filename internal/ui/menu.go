@@ -93,12 +93,78 @@ func (m *Menu) ViewVariables() {
 	}
 }
 
-func (m *Menu) HandleRequestSelection(reqInfo *models.RequestInfo) {
+func (m *Menu) CreateNewRequest() *models.RequestInfo {
+	path := ""
+	method := "GET"
+	url := ""
+
+	survey.AskOne(&survey.Input{Message: "Request Path (e.g. Folder > My Request):"}, &path)
+	if path == "" {
+		return nil
+	}
+
+	survey.AskOne(&survey.Select{
+		Message: "Method:",
+		Options: []string{"GET", "POST", "PUT", "DELETE", "PATCH"},
+		Default: "GET",
+	}, &method)
+
+	survey.AskOne(&survey.Input{Message: "URL:", Default: "https://"}, &url)
+
+	newReq := models.RequestInfo{
+		Path: path,
+		Request: &models.Request{
+			Method: method,
+			URL:    models.URL{Raw: url},
+		},
+	}
+
+	m.Storage.SaveSingleRequest(newReq)
+	fmt.Printf("Request created at: %s\n", path)
+	return &newReq
+}
+
+func (m *Menu) DuplicateRequest(reqInfo *models.RequestInfo) *models.RequestInfo {
+	newPath := ""
+	survey.AskOne(&survey.Input{
+		Message: "New Path:",
+		Default: reqInfo.Path + " Copy",
+	}, &newPath)
+
+	if newPath == "" {
+		return nil
+	}
+
+	// Clone events
+	var eventsCopy []models.Event
+	if reqInfo.Events != nil {
+		eventsCopy = make([]models.Event, len(reqInfo.Events))
+		for i, e := range reqInfo.Events {
+			eventsCopy[i] = e
+			if e.Script.Exec != nil {
+				eventsCopy[i].Script.Exec = make([]string, len(e.Script.Exec))
+				copy(eventsCopy[i].Script.Exec, e.Script.Exec)
+			}
+		}
+	}
+
+	newReq := models.RequestInfo{
+		Path:    newPath,
+		Request: reqInfo.Request.DeepCopy(),
+		Events:  eventsCopy,
+	}
+
+	m.Storage.SaveSingleRequest(newReq)
+	fmt.Printf("Request duplicated to: %s\n", newPath)
+	return &newReq
+}
+
+func (m *Menu) HandleRequestSelection(reqInfo *models.RequestInfo, allRequests *[]models.RequestInfo) {
 	for {
 		action := ""
 		prompt := &survey.Select{
 			Message: fmt.Sprintf("Action for [%s]:", reqInfo.Path),
-			Options: []string{"Send", "Edit Body", "Edit Headers", "Back"},
+			Options: []string{"Send", "Edit Body", "Edit Headers", "Duplicate", "Back"},
 		}
 		survey.AskOne(prompt, &action)
 
@@ -121,6 +187,11 @@ func (m *Menu) HandleRequestSelection(reqInfo *models.RequestInfo) {
 			if m.EditRequestHeaders(reqInfo.Request) {
 				m.Storage.SaveSingleRequest(*reqInfo)
 			}
+		case "Duplicate":
+			if newReq := m.DuplicateRequest(reqInfo); newReq != nil {
+				*allRequests = append(*allRequests, *newReq)
+			}
+			return
 		case "Back":
 			return
 		}

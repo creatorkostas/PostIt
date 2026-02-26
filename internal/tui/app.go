@@ -18,6 +18,10 @@ type TUIApp struct {
 	Processor *processor.ScriptProcessor
 	Client    *api.Client
 
+	// Data
+	Collection models.Collection
+	Cached     []models.RequestInfo
+
 	// Layout Components
 	Tree     *tview.TreeView
 	Response *tview.TextView
@@ -37,6 +41,9 @@ func NewTUIApp(store *storage.Manager, proc *processor.ScriptProcessor, client *
 }
 
 func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.RequestInfo) error {
+	t.Collection = collection
+	t.Cached = cachedRequests
+
 	// Sidebar: Tree View
 	root := tview.NewTreeNode(collection.Info.Name).SetColor(tcell.ColorYellow)
 	t.Tree = tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
@@ -54,7 +61,7 @@ func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.Reque
 	// Status/Info Area
 	t.Status = tview.NewTextView().SetDynamicColors(true)
 	t.Status.SetBorder(false)
-	t.Status.SetText(" [yellow]Tab[white]: Switch Panels | [yellow]Ctrl+R[white]: Send | [yellow]Ctrl+C[white]: Exit")
+	t.Status.SetText(" [yellow]Tab[white]: Switch | [yellow]Ctrl+R[white]: Send | [yellow]Ctrl+N[white]: New | [yellow]Ctrl+D[white]: Duplicate | [yellow]Ctrl+C[white]: Exit")
 
 	// Main Request Area
 	t.Main = tview.NewFlex().SetDirection(tview.FlexRow)
@@ -86,6 +93,14 @@ func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.Reque
 		case tcell.KeyCtrlR:
 			if t.CurrentReq != nil {
 				t.sendRequest()
+			}
+			return nil
+		case tcell.KeyCtrlN:
+			t.showNewRequestForm()
+			return nil
+		case tcell.KeyCtrlD:
+			if t.CurrentReq != nil {
+				t.duplicateRequest()
 			}
 			return nil
 		case tcell.KeyTab:
@@ -206,3 +221,172 @@ func (t *TUIApp) sendRequest() {
 		})
 	}()
 }
+
+func (t *TUIApp) refreshTree() {
+	root := tview.NewTreeNode(t.Collection.Info.Name).SetColor(tcell.ColorYellow)
+	t.buildTree(root, t.Collection.Item, "", t.Cached)
+	
+	visited := make(map[string]bool)
+	t.markVisited(root, visited)
+
+	customRoot := tview.NewTreeNode("Custom Requests").SetColor(tcell.ColorBlue)
+	hasCustom := false
+	for _, req := range t.Cached {
+		if !visited[req.Path] {
+			// Create a local copy to avoid closure issues
+			r := req
+			node := tview.NewTreeNode(req.Path).SetColor(tcell.ColorGreen).SetReference(&r)
+			customRoot.AddChild(node)
+			hasCustom = true
+		}
+	}
+	if hasCustom {
+		root.AddChild(customRoot)
+	}
+
+	t.Tree.SetRoot(root).SetCurrentNode(root)
+}
+
+func (t *TUIApp) markVisited(node *tview.TreeNode, visited map[string]bool) {
+	ref := node.GetReference()
+	if req, ok := ref.(*models.RequestInfo); ok {
+		visited[req.Path] = true
+	}
+	for _, child := range node.GetChildren() {
+		t.markVisited(child, visited)
+	}
+}
+
+func (t *TUIApp) showNewRequestForm() {
+	pages := tview.NewPages()
+	
+	// Create the layout
+	rightSide := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(t.Main, 0, 1, false).
+		AddItem(t.Response, 0, 1, false).
+		AddItem(t.Status, 1, 0, false)
+
+	mainLayout := tview.NewFlex().
+		AddItem(t.Tree, 35, 1, true).
+		AddItem(rightSide, 0, 3, false)
+
+	pages.AddPage("main", mainLayout, true, true)
+
+	form := tview.NewForm()
+	form.SetBorder(true).SetTitle(" New Request ").SetTitleAlign(tview.AlignLeft)
+
+	var name, method, url string
+	method = "GET"
+	form.AddInputField("Path (e.g. Folder > Name)", "", 40, nil, func(text string) { name = text })
+	form.AddDropDown("Method", []string{"GET", "POST", "PUT", "DELETE", "PATCH"}, 0, func(option string, optionIndex int) { method = option })
+	form.AddInputField("URL", "https://", 40, nil, func(text string) { url = text })
+
+	form.AddButton("Save", func() {
+		if name == "" || url == "" {
+			return
+		}
+		newReq := models.RequestInfo{
+			Path: name,
+			Request: &models.Request{
+				Method: method,
+				URL:    models.URL{Raw: url},
+			},
+		}
+		t.Cached = append(t.Cached, newReq)
+		t.Storage.SaveSingleRequest(newReq)
+		t.refreshTree()
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+	})
+	form.AddButton("Cancel", func() {
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+	})
+
+	// Center the form
+	modal := tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(nil, 0, 1, false).
+			AddItem(form, 15, 1, true).
+			AddItem(nil, 0, 1, false), 50, 1, true).
+		AddItem(nil, 0, 1, false)
+
+	pages.AddPage("form", modal, true, true)
+	t.App.SetRoot(pages, true).SetFocus(form)
+}
+
+func (t *TUIApp) duplicateRequest() {
+	if t.CurrentReq == nil {
+		return
+	}
+
+	pages := tview.NewPages()
+	
+	// Create the layout
+	rightSide := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(t.Main, 0, 1, false).
+		AddItem(t.Response, 0, 1, false).
+		AddItem(t.Status, 1, 0, false)
+
+	mainLayout := tview.NewFlex().
+		AddItem(t.Tree, 35, 1, true).
+		AddItem(rightSide, 0, 3, false)
+
+	pages.AddPage("main", mainLayout, true, true)
+
+	form := tview.NewForm()
+	form.SetBorder(true).SetTitle(" Duplicate Request ").SetTitleAlign(tview.AlignLeft)
+
+	var newPath string
+	newPath = t.CurrentReq.Path + " Copy"
+	form.AddInputField("New Path", newPath, 60, nil, func(text string) { newPath = text })
+
+	form.AddButton("Duplicate", func() {
+		if newPath == "" {
+			return
+		}
+		
+		// Clone events
+		var eventsCopy []models.Event
+		if t.CurrentReq.Events != nil {
+			eventsCopy = make([]models.Event, len(t.CurrentReq.Events))
+			for i, e := range t.CurrentReq.Events {
+				eventsCopy[i] = e
+				if e.Script.Exec != nil {
+					eventsCopy[i].Script.Exec = make([]string, len(e.Script.Exec))
+					copy(eventsCopy[i].Script.Exec, e.Script.Exec)
+				}
+			}
+		}
+
+		// Clone request
+		newReq := models.RequestInfo{
+			Path:    newPath,
+			Request: t.CurrentReq.Request.DeepCopy(),
+			Events:  eventsCopy,
+		}
+		
+		t.Cached = append(t.Cached, newReq)
+		t.Storage.SaveSingleRequest(newReq)
+		t.refreshTree()
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+	})
+	form.AddButton("Cancel", func() {
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+	})
+
+	modal := tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(nil, 0, 1, false).
+			AddItem(form, 9, 1, true).
+			AddItem(nil, 0, 1, false), 70, 1, true).
+		AddItem(nil, 0, 1, false)
+
+	pages.AddPage("form", modal, true, true)
+	t.App.SetRoot(pages, true).SetFocus(form)
+}
+

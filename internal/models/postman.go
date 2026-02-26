@@ -35,6 +35,66 @@ type Request struct {
 	Auth   *Auth    `json:"auth,omitempty"`
 }
 
+func (r *Request) DeepCopy() *Request {
+	if r == nil {
+		return nil
+	}
+	reqCopy := *r
+	
+	// Copy Headers
+	if r.Header != nil {
+		reqCopy.Header = make([]Header, len(r.Header))
+		for i, h := range r.Header {
+			reqCopy.Header[i] = h
+		}
+	}
+
+	// Copy Body
+	if r.Body != nil {
+		bodyCopy := *r.Body
+		if r.Body.Urlencoded != nil {
+			bodyCopy.Urlencoded = make([]Urlencoded, len(r.Body.Urlencoded))
+			for i, u := range r.Body.Urlencoded {
+				bodyCopy.Urlencoded[i] = u
+			}
+		}
+		reqCopy.Body = &bodyCopy
+	}
+
+	// Copy URL
+	urlCopy := r.URL
+	if r.URL.Host != nil {
+		urlCopy.Host = make([]string, len(r.URL.Host))
+		copy(urlCopy.Host, r.URL.Host)
+	}
+	if r.URL.Path != nil {
+		urlCopy.Path = make([]string, len(r.URL.Path))
+		copy(urlCopy.Path, r.URL.Path)
+	}
+	if r.URL.Query != nil {
+		urlCopy.Query = make([]Query, len(r.URL.Query))
+		for i, q := range r.URL.Query {
+			urlCopy.Query[i] = q
+		}
+	}
+	reqCopy.URL = urlCopy
+
+	// Copy Auth
+	if r.Auth != nil {
+		authCopy := *r.Auth
+		if r.Auth.Bearer != nil {
+			authCopy.Bearer = make([]Bearer, len(r.Auth.Bearer))
+			for i, b := range r.Auth.Bearer {
+				authCopy.Bearer[i] = b
+			}
+		}
+		reqCopy.Auth = &authCopy
+	}
+
+	return &reqCopy
+}
+
+
 type Header struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
