@@ -46,7 +46,56 @@
             font-weight: 600;
             border-bottom: 1px solid var(--border-color);
             color: var(--postman-orange);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
+
+        .sidebar-action-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+        .sidebar-action-btn:hover { color: white; border-color: #666; }
+
+        /* Modals */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: var(--bg-sidebar);
+            border: 1px solid var(--border-color);
+            padding: 25px;
+            border-radius: 5px;
+            width: 400px;
+        }
+        .modal-title { margin-top: 0; margin-bottom: 20px; font-size: 16px; color: var(--postman-orange); }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 5px; }
+        .form-group input, .form-group select {
+            width: 100%;
+            background: #2d2d2d;
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 8px;
+            border-radius: 3px;
+            box-sizing: border-box;
+        }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        .btn-cancel { background: transparent; border: 1px solid var(--border-color); color: white; padding: 8px 15px; border-radius: 3px; cursor: pointer; }
+        .btn-save { background: var(--postman-orange); border: none; color: white; padding: 8px 15px; border-radius: 3px; cursor: pointer; font-weight: bold; }
+
 
         #collection-tree {
             flex: 1;
@@ -158,6 +207,19 @@
         }
         #send-btn:hover { opacity: 0.9; }
 
+        #save-btn {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+            padding: 0 15px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 13px;
+            margin-right: 10px;
+            border-radius: 4px;
+        }
+        #save-btn:hover { color: white; border-color: #666; }
+
         /* Tabs & Editors */
         .tabs {
             display: flex;
@@ -199,6 +261,29 @@
             outline: none;
         }
 
+        .header-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .header-row input {
+            background: #2d2d2d;
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 5px 10px;
+            font-size: 12px;
+            flex: 1;
+        }
+        .btn-remove-header {
+            background: transparent;
+            border: none;
+            color: #ff4d4d;
+            cursor: pointer;
+            font-weight: bold;
+            padding: 0 5px;
+        }
+
+
         /* Response */
         #response-container {
             height: 40%;
@@ -229,7 +314,14 @@
 </head>
 <body>
     <div id="sidebar">
-        <div id="sidebar-header">COLLECTIONS</div>
+        <div id="sidebar-header">
+            <span>COLLECTIONS</span>
+            <div style="display: flex; gap: 5px;">
+                <button class="sidebar-action-btn" title="New Request" onclick="showNewModal()">New</button>
+                <button class="sidebar-action-btn" title="Edit Selected" onclick="showEditModal()">Edit</button>
+                <button class="sidebar-action-btn" title="Duplicate Selected" onclick="showDuplicateModal()">Copy</button>
+            </div>
+        </div>
         <div id="collection-tree">
             <!-- Tree will be injected here -->
         </div>
@@ -237,6 +329,9 @@
 
     <div id="main">
         <div id="request-header">
+            <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                <button id="save-btn" onclick="saveCurrentRequest()">Save Changes</button>
+            </div>
             <div class="url-bar-container">
                 <div id="req-method-display">GET</div>
                 <input type="text" id="req-url-input" spellcheck="false" placeholder="Enter request URL">
@@ -254,7 +349,10 @@
                 <textarea id="req-body-input" spellcheck="false"></textarea>
             </div>
             <div id="pane-headers" class="pane">
-                <div id="req-headers-list" style="font-size: 12px; font-family: monospace;"></div>
+                <div style="margin-bottom: 15px;">
+                    <button class="sidebar-action-btn" onclick="addHeaderRow()">+ Add Header</button>
+                </div>
+                <div id="req-headers-list"></div>
             </div>
         </div>
 
@@ -264,6 +362,79 @@
                 <div id="response-meta"></div>
             </div>
             <pre id="response-body">// Select a request and hit Send</pre>
+        </div>
+    </div>
+
+    <!-- New Request Modal -->
+    <div id="new-modal" class="modal-overlay">
+        <div class="modal">
+            <h3 class="modal-title">New Request</h3>
+            <div class="form-group">
+                <label>Path (e.g. Folder > Name)</label>
+                <input type="text" id="new-path" placeholder="My Folder > My Request">
+            </div>
+            <div class="form-group">
+                <label>Method</label>
+                <select id="new-method">
+                    <option>GET</option>
+                    <option>POST</option>
+                    <option>PUT</option>
+                    <option>DELETE</option>
+                    <option>PATCH</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>URL</label>
+                <input type="text" id="new-url" value="https://">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeModal('new-modal')">Cancel</button>
+                <button class="btn-save" onclick="saveNewRequest()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Duplicate Modal -->
+    <div id="duplicate-modal" class="modal-overlay">
+        <div class="modal">
+            <h3 class="modal-title">Duplicate Request</h3>
+            <div class="form-group">
+                <label>New Path</label>
+                <input type="text" id="duplicate-path">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeModal('duplicate-modal')">Cancel</button>
+                <button class="btn-save" onclick="saveDuplicateRequest()">Duplicate</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="edit-modal" class="modal-overlay">
+        <div class="modal">
+            <h3 class="modal-title">Edit Request</h3>
+            <div class="form-group">
+                <label>Path</label>
+                <input type="text" id="edit-path">
+            </div>
+            <div class="form-group">
+                <label>Method</label>
+                <select id="edit-method">
+                    <option>GET</option>
+                    <option>POST</option>
+                    <option>PUT</option>
+                    <option>DELETE</option>
+                    <option>PATCH</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>URL</label>
+                <input type="text" id="edit-url">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeModal('edit-modal')">Cancel</button>
+                <button class="btn-save" onclick="saveEditRequest()">Update</button>
+            </div>
         </div>
     </div>
 
@@ -279,11 +450,153 @@
                 flatRequests = data.flat;
                 const treeContainer = document.getElementById('collection-tree');
                 treeContainer.innerHTML = '';
+                
+                // Render collection tree
                 if (data.collection && data.collection.item) {
                     renderTree(treeContainer, data.collection.item, "");
                 }
+
+                // Render custom requests not in collection
+                const visited = new Set();
+                function markVisited(items, prefix) {
+                    if (!items) return;
+                    items.forEach(item => {
+                        const path = prefix ? `${prefix} > ${item.name}` : item.name;
+                        if (item.request) visited.add(path);
+                        if (item.item) markVisited(item.item, path);
+                    });
+                }
+                markVisited(data.collection.item, "");
+
+                const customRequests = flatRequests.filter(r => !visited.has(r.path));
+                if (customRequests.length > 0) {
+                    const customFolder = document.createElement('div');
+                    customFolder.className = 'folder';
+                    customFolder.textContent = 'Custom Requests';
+                    const customContent = document.createElement('div');
+                    customContent.className = 'folder-content';
+                    
+                    customFolder.onclick = () => {
+                        customFolder.classList.toggle('expanded');
+                        customContent.classList.toggle('show');
+                    };
+
+                    customRequests.forEach(req => {
+                        const reqDiv = document.createElement('div');
+                        reqDiv.className = 'request-item';
+                        reqDiv.dataset.path = req.path;
+                        reqDiv.innerHTML = `
+                            <span class="method-tag method-${req.request.method}">${req.request.method}</span>
+                            <span>${req.path}</span>
+                        `;
+                        reqDiv.onclick = (e) => { e.stopPropagation(); selectRequest(req.path); };
+                        customContent.appendChild(reqDiv);
+                    });
+
+                    treeContainer.appendChild(customFolder);
+                    treeContainer.appendChild(customContent);
+                }
+
             } catch (e) {
                 console.error("Failed to load requests", e);
+            }
+        }
+
+        function showNewModal() {
+            document.getElementById('new-modal').classList.add('show');
+        }
+
+        function showDuplicateModal() {
+            if (!currentRequest) {
+                alert("Please select a request to duplicate first.");
+                return;
+            }
+            document.getElementById('duplicate-path').value = currentRequest.path + " Copy";
+            document.getElementById('duplicate-modal').classList.add('show');
+        }
+
+        function showEditModal() {
+            if (!currentRequest) {
+                alert("Please select a request to edit first.");
+                return;
+            }
+            document.getElementById('edit-path').value = currentRequest.path;
+            document.getElementById('edit-method').value = currentRequest.request.method;
+            document.getElementById('edit-url').value = currentRequest.request.url.raw;
+            document.getElementById('edit-modal').classList.add('show');
+        }
+
+        async function saveEditRequest() {
+            const newPath = document.getElementById('edit-path').value;
+            const method = document.getElementById('edit-method').value;
+            const url = document.getElementById('edit-url').value;
+
+            if (!newPath || !url || !currentRequest) return;
+
+            const resp = await fetch('/api/requests/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    oldPath: currentRequest.path, 
+                    newPath: newPath,
+                    method: method,
+                    url: url,
+                    body: currentRequest.request.body ? currentRequest.request.body.raw : '',
+                    headers: currentRequest.request.header || []
+                })
+            });
+
+            if (resp.ok) {
+                closeModal('edit-modal');
+                // We need to re-init and potentially re-select if path changed
+                await init();
+                selectRequest(newPath);
+            }
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('show');
+        }
+
+        async function saveNewRequest() {
+            const path = document.getElementById('new-path').value;
+            const method = document.getElementById('new-method').value;
+            const url = document.getElementById('new-url').value;
+
+            if (!path || !url) return;
+
+            const resp = await fetch('/api/requests/new', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    path, 
+                    method, 
+                    url,
+                    body: '',
+                    headers: []
+                })
+            });
+
+            if (resp.ok) {
+                closeModal('new-modal');
+                init();
+            }
+        }
+
+
+        async function saveDuplicateRequest() {
+            const newPath = document.getElementById('duplicate-path').value;
+            if (!newPath || !currentRequest) return;
+
+            const resp = await fetch('/api/requests/duplicate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: currentRequest.path, newPath: newPath })
+            });
+
+            if (resp.ok) {
+                closeModal('duplicate-modal');
+                init();
             }
         }
 
@@ -341,10 +654,7 @@
             document.getElementById('req-url-input').value = currentRequest.request.url.raw;
             document.getElementById('req-body-input').value = currentRequest.request.body ? currentRequest.request.body.raw : '';
             
-            const hDiv = document.getElementById('req-headers-list');
-            hDiv.innerHTML = (currentRequest.request.header || []).map(h => 
-                `<div style="margin-bottom: 5px;"><span style="color:var(--postman-orange)">${h.key}:</span> ${h.value}</div>`
-            ).join('');
+            renderHeaders(currentRequest.request.header || []);
 
             // Restore from session cache
             const cached = responseCache[path];
@@ -354,6 +664,69 @@
             } else {
                 document.getElementById('response-body').textContent = '// Ready';
                 document.getElementById('response-meta').textContent = '';
+            }
+        }
+
+        function renderHeaders(headers) {
+            const hDiv = document.getElementById('req-headers-list');
+            hDiv.innerHTML = '';
+            headers.forEach((h, index) => {
+                const row = createHeaderRow(h.key, h.value);
+                hDiv.appendChild(row);
+            });
+        }
+
+        function createHeaderRow(key = '', value = '') {
+            const row = document.createElement('div');
+            row.className = 'header-row';
+            row.innerHTML = `
+                <input type="text" placeholder="Key" class="header-key" value="${key}">
+                <input type="text" placeholder="Value" class="header-value" value="${value}">
+                <button class="btn-remove-header" onclick="this.parentElement.remove()">✕</button>
+            `;
+            return row;
+        }
+
+        function addHeaderRow() {
+            const hDiv = document.getElementById('req-headers-list');
+            hDiv.appendChild(createHeaderRow());
+        }
+
+        async function saveCurrentRequest() {
+            if (!currentRequest) return;
+            
+            const method = document.getElementById('req-method-display').textContent;
+            const url = document.getElementById('req-url-input').value;
+            const body = document.getElementById('req-body-input').value;
+            
+            const headerRows = document.querySelectorAll('.header-row');
+            const headers = Array.from(headerRows).map(row => ({
+                key: row.querySelector('.header-key').value,
+                value: row.querySelector('.header-value').value
+            })).filter(h => h.key !== '');
+
+            const resp = await fetch('/api/requests/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    oldPath: currentRequest.path, 
+                    newPath: currentRequest.path,
+                    method: method,
+                    url: url,
+                    body: body,
+                    headers: headers
+                })
+            });
+
+            if (resp.ok) {
+                const data = await resp.json();
+                // Update local list
+                const idx = flatRequests.findIndex(r => r.path === currentRequest.path);
+                if (idx !== -1) {
+                    flatRequests[idx] = data;
+                    currentRequest = data;
+                }
+                alert("Request saved successfully!");
             }
         }
 
