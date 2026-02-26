@@ -9,6 +9,7 @@ import (
 	"postit/internal/models"
 	"postit/internal/processor"
 	"postit/internal/storage"
+	"strings"
 )
 
 //go:embed static/*
@@ -37,12 +38,37 @@ func (s *Server) Start(port int) error {
 	http.HandleFunc("/api/requests/new", s.handleNewRequest)
 	http.HandleFunc("/api/requests/duplicate", s.handleDuplicateRequest)
 	http.HandleFunc("/api/requests/update", s.handleUpdateRequest)
+	http.HandleFunc("/api/variables", s.handleVariables)
 	http.HandleFunc("/api/send", s.handleSendRequest)
 	http.Handle("/", http.FileServer(http.FS(staticAssets)))
 
 	fmt.Printf("Web UI started at http://localhost:%d\n", port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 }
+
+func (s *Server) handleVariables(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(s.Storage.VariableMap)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var input map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		s.Storage.VariableMap = input
+		s.Storage.SaveVariables()
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
 
 func (s *Server) handleUpdateRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -51,12 +77,16 @@ func (s *Server) handleUpdateRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		OldPath string          `json:"oldPath"`
-		NewPath string          `json:"newPath"`
-		Method  string          `json:"method"`
-		URL     string          `json:"url"`
-		Body    string          `json:"body"`
-		Headers []models.Header `json:"headers"`
+		OldPath          string              `json:"oldPath"`
+		NewPath          string              `json:"newPath"`
+		Method           string              `json:"method"`
+		URL              string              `json:"url"`
+		BodyMode         string              `json:"bodyMode"`
+		BodyRaw          string              `json:"bodyRaw"`
+		Urlencoded       []models.Urlencoded `json:"urlencoded"`
+		Headers          []models.Header     `json:"headers"`
+		PreRequestScript string              `json:"preRequestScript"`
+		TestScript       string              `json:"testScript"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -82,13 +112,39 @@ func (s *Server) handleUpdateRequest(w http.ResponseWriter, r *http.Request) {
 	s.FlatList[targetIdx].Request.URL.Raw = input.URL
 	
 	if s.FlatList[targetIdx].Request.Body == nil {
-		s.FlatList[targetIdx].Request.Body = &models.Body{Mode: "raw"}
+		s.FlatList[targetIdx].Request.Body = &models.Body{}
 	}
-	s.FlatList[targetIdx].Request.Body.Raw = input.Body
+	s.FlatList[targetIdx].Request.Body.Mode = input.BodyMode
+	s.FlatList[targetIdx].Request.Body.Raw = input.BodyRaw
+	s.FlatList[targetIdx].Request.Body.Urlencoded = input.Urlencoded
+	
 	s.FlatList[targetIdx].Request.Header = input.Headers
+
+
+	// Update Events (Scripts)
+	s.FlatList[targetIdx].Events = []models.Event{}
+	if input.PreRequestScript != "" {
+		s.FlatList[targetIdx].Events = append(s.FlatList[targetIdx].Events, models.Event{
+			Listen: "prerequest",
+			Script: models.Script{
+				Type: "text/javascript",
+				Exec: strings.Split(input.PreRequestScript, "\n"),
+			},
+		})
+	}
+	if input.TestScript != "" {
+		s.FlatList[targetIdx].Events = append(s.FlatList[targetIdx].Events, models.Event{
+			Listen: "test",
+			Script: models.Script{
+				Type: "text/javascript",
+				Exec: strings.Split(input.TestScript, "\n"),
+			},
+		})
+	}
 
 	// Save to storage
 	s.Storage.SaveSingleRequest(s.FlatList[targetIdx])
+
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(s.FlatList[targetIdx])
@@ -103,9 +159,15 @@ func (s *Server) handleNewRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Path   string `json:"path"`
-		Method string `json:"method"`
-		URL    string `json:"url"`
+		Path             string              `json:"path"`
+		Method           string              `json:"method"`
+		URL              string              `json:"url"`
+		BodyMode         string              `json:"bodyMode"`
+		BodyRaw          string              `json:"bodyRaw"`
+		Urlencoded       []models.Urlencoded `json:"urlencoded"`
+		Headers          []models.Header     `json:"headers"`
+		PreRequestScript string              `json:"preRequestScript"`
+		TestScript       string              `json:"testScript"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -117,7 +179,33 @@ func (s *Server) handleNewRequest(w http.ResponseWriter, r *http.Request) {
 		Request: &models.Request{
 			Method: input.Method,
 			URL:    models.URL{Raw: input.URL},
+			Body: &models.Body{
+				Mode:       input.BodyMode,
+				Raw:        input.BodyRaw,
+				Urlencoded: input.Urlencoded,
+			},
+			Header: input.Headers,
 		},
+	}
+
+	// Update Events (Scripts)
+	if input.PreRequestScript != "" {
+		newReq.Events = append(newReq.Events, models.Event{
+			Listen: "prerequest",
+			Script: models.Script{
+				Type: "text/javascript",
+				Exec: strings.Split(input.PreRequestScript, "\n"),
+			},
+		})
+	}
+	if input.TestScript != "" {
+		newReq.Events = append(newReq.Events, models.Event{
+			Listen: "test",
+			Script: models.Script{
+				Type: "text/javascript",
+				Exec: strings.Split(input.TestScript, "\n"),
+			},
+		})
 	}
 
 	s.Storage.SaveSingleRequest(newReq)
@@ -126,6 +214,7 @@ func (s *Server) handleNewRequest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newReq)
 }
+
 
 func (s *Server) handleDuplicateRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -194,8 +283,10 @@ func (s *Server) handleGetRequests(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSendRequest(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Path string `json:"path"`
-		Body string `json:"body"`
+		Path       string              `json:"path"`
+		BodyMode   string              `json:"bodyMode"`
+		BodyRaw    string              `json:"bodyRaw"`
+		Urlencoded []models.Urlencoded `json:"urlencoded"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -215,11 +306,16 @@ func (s *Server) handleSendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if target.Request.Body != nil && input.Body != "" {
-		target.Request.Body.Raw = input.Body
+	if target.Request.Body == nil {
+		target.Request.Body = &models.Body{}
 	}
+	target.Request.Body.Mode = input.BodyMode
+	target.Request.Body.Raw = input.BodyRaw
+	target.Request.Body.Urlencoded = input.Urlencoded
 
 	s.Processor.RunScripts(target.Events, "prerequest", nil, nil, target.Request.Header)
+
+
 	s.Processor.RunScripts(target.Events, "test", nil, nil, target.Request.Header)
 
 	body, headers := s.Client.ExecuteRequest(target.Request)
@@ -229,7 +325,8 @@ func (s *Server) handleSendRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"body": body,
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"body":    body,
+		"headers": headers,
 	})
 }

@@ -317,6 +317,7 @@
         <div id="sidebar-header">
             <span>COLLECTIONS</span>
             <div style="display: flex; gap: 5px;">
+                <button class="sidebar-action-btn" title="Global Variables" onclick="showVariablesModal()">Vars</button>
                 <button class="sidebar-action-btn" title="New Request" onclick="showNewModal()">New</button>
                 <button class="sidebar-action-btn" title="Edit Selected" onclick="showEditModal()">Edit</button>
                 <button class="sidebar-action-btn" title="Duplicate Selected" onclick="showDuplicateModal()">Copy</button>
@@ -342,11 +343,25 @@
         <div class="tabs">
             <div class="tab active" onclick="switchTab('body')">Body</div>
             <div class="tab" onclick="switchTab('headers')">Headers</div>
+            <div class="tab" onclick="switchTab('scripts')">Pre-request</div>
+            <div class="tab" onclick="switchTab('tests')">Post-request</div>
         </div>
 
         <div id="editor-container">
             <div id="pane-body" class="pane active">
-                <textarea id="req-body-input" spellcheck="false"></textarea>
+                <div style="margin-bottom: 10px; display: flex; gap: 15px; font-size: 12px; color: var(--text-secondary);">
+                    <label><input type="radio" name="body-mode" value="raw" checked onclick="switchBodyMode('raw')"> raw</label>
+                    <label><input type="radio" name="body-mode" value="urlencoded" onclick="switchBodyMode('urlencoded')"> x-www-form-urlencoded</label>
+                </div>
+                <div id="body-raw-container" style="flex: 1; display: flex; flex-direction: column;">
+                    <textarea id="req-body-input" spellcheck="false"></textarea>
+                </div>
+                <div id="body-urlencoded-container" style="flex: 1; display: none; flex-direction: column; overflow-y: auto;">
+                    <div style="margin-bottom: 10px;">
+                        <button class="sidebar-action-btn" onclick="addUrlencodedRow()">+ Add Field</button>
+                    </div>
+                    <div id="req-urlencoded-list"></div>
+                </div>
             </div>
             <div id="pane-headers" class="pane">
                 <div style="margin-bottom: 15px;">
@@ -354,14 +369,28 @@
                 </div>
                 <div id="req-headers-list"></div>
             </div>
+            <div id="pane-scripts" class="pane">
+                <textarea id="req-prerequest-input" spellcheck="false" placeholder="// Pre-request Script (JavaScript)"></textarea>
+            </div>
+            <div id="pane-tests" class="pane">
+                <textarea id="req-tests-input" spellcheck="false" placeholder="// Post-request Script (JavaScript)"></textarea>
+            </div>
         </div>
 
         <div id="response-container">
             <div id="response-header">
-                <span>RESPONSE</span>
+                <div class="tabs" style="border-bottom: none; padding: 0;">
+                    <div class="tab active" style="padding: 5px 10px; font-size: 11px;" onclick="switchResponseTab('body')">Body</div>
+                    <div class="tab" style="padding: 5px 10px; font-size: 11px;" onclick="switchResponseTab('headers')">Headers</div>
+                </div>
                 <div id="response-meta"></div>
             </div>
-            <pre id="response-body">// Select a request and hit Send</pre>
+            <div id="resp-pane-body" class="pane active">
+                <pre id="response-body">// Select a request and hit Send</pre>
+            </div>
+            <div id="resp-pane-headers" class="pane" style="padding: 15px; overflow: auto; font-family: monospace; font-size: 12px; color: #a6a6a6;">
+                <!-- Response headers here -->
+            </div>
         </div>
     </div>
 
@@ -438,6 +467,21 @@
         </div>
     </div>
 
+    <!-- Variables Modal -->
+    <div id="variables-modal" class="modal-overlay">
+        <div class="modal" style="width: 500px;">
+            <h3 class="modal-title">Global Variables</h3>
+            <div id="variables-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;">
+                <!-- Rows will be injected here -->
+            </div>
+            <button class="sidebar-action-btn" onclick="addVariableRow()">+ Add Variable</button>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeModal('variables-modal')">Cancel</button>
+                <button class="btn-save" onclick="saveVariables()">Save Variables</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let flatRequests = [];
         let currentRequest = null;
@@ -502,6 +546,54 @@
             }
         }
 
+        async function showVariablesModal() {
+            const resp = await fetch('/api/variables');
+            const vars = await resp.json();
+            const list = document.getElementById('variables-list');
+            list.innerHTML = '';
+            
+            Object.entries(vars).forEach(([key, val]) => {
+                list.appendChild(createVariableRow(key, val));
+            });
+            
+            document.getElementById('variables-modal').classList.add('show');
+        }
+
+        function createVariableRow(key = '', val = '') {
+            const row = document.createElement('div');
+            row.className = 'header-row'; // Reuse header-row styling
+            row.innerHTML = `
+                <input type="text" placeholder="Variable Name" class="var-key" value="${key}">
+                <input type="text" placeholder="Value" class="var-value" value="${val}">
+                <button class="btn-remove-header" onclick="this.parentElement.remove()">✕</button>
+            `;
+            return row;
+        }
+
+        function addVariableRow() {
+            document.getElementById('variables-list').appendChild(createVariableRow());
+        }
+
+        async function saveVariables() {
+            const rows = document.querySelectorAll('#variables-list .header-row');
+            const vars = {};
+            rows.forEach(row => {
+                const k = row.querySelector('.var-key').value;
+                const v = row.querySelector('.var-value').value;
+                if (k) vars[k] = v;
+            });
+
+            const resp = await fetch('/api/variables', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(vars)
+            });
+
+            if (resp.ok) {
+                closeModal('variables-modal');
+            }
+        }
+
         function showNewModal() {
             document.getElementById('new-modal').classList.add('show');
         }
@@ -533,6 +625,9 @@
 
             if (!newPath || !url || !currentRequest) return;
 
+            const preReqObj = (currentRequest.events || []).find(e => e.listen === 'prerequest');
+            const testObj = (currentRequest.events || []).find(e => e.listen === 'test');
+
             const resp = await fetch('/api/requests/update', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -541,10 +636,16 @@
                     newPath: newPath,
                     method: method,
                     url: url,
-                    body: currentRequest.request.body ? currentRequest.request.body.raw : '',
-                    headers: currentRequest.request.header || []
+                    bodyMode: (currentRequest.request.body && currentRequest.request.body.mode) || 'raw',
+                    bodyRaw: currentRequest.request.body ? (currentRequest.request.body.raw || '') : '',
+                    urlencoded: currentRequest.request.body ? (currentRequest.request.body.urlencoded || []) : [],
+                    headers: currentRequest.request.header || [],
+                    preRequestScript: preReqObj ? preReqObj.script.exec.join('\n') : '',
+                    testScript: testObj ? testObj.script.exec.join('\n') : ''
                 })
             });
+
+
 
             if (resp.ok) {
                 closeModal('edit-modal');
@@ -572,8 +673,12 @@
                     path, 
                     method, 
                     url,
-                    body: '',
-                    headers: []
+                    bodyMode: 'raw',
+                    bodyRaw: '',
+                    urlencoded: [],
+                    headers: [],
+                    preRequestScript: '',
+                    testScript: ''
                 })
             });
 
@@ -641,6 +746,35 @@
             });
         }
 
+        function switchBodyMode(mode) {
+            document.getElementById('body-raw-container').style.display = mode === 'raw' ? 'flex' : 'none';
+            document.getElementById('body-urlencoded-container').style.display = mode === 'urlencoded' ? 'flex' : 'none';
+            document.querySelector(`input[name="body-mode"][value="${mode}"]`).checked = true;
+        }
+
+        function renderUrlencoded(data) {
+            const list = document.getElementById('req-urlencoded-list');
+            list.innerHTML = '';
+            (data || []).forEach(item => {
+                list.appendChild(createUrlencodedRow(item.key, item.value));
+            });
+        }
+
+        function createUrlencodedRow(key = '', value = '') {
+            const row = document.createElement('div');
+            row.className = 'header-row';
+            row.innerHTML = `
+                <input type="text" placeholder="Key" class="urlencoded-key" value="${key}">
+                <input type="text" placeholder="Value" class="urlencoded-value" value="${value}">
+                <button class="btn-remove-header" onclick="this.parentElement.remove()">✕</button>
+            `;
+            return row;
+        }
+
+        function addUrlencodedRow() {
+            document.getElementById('req-urlencoded-list').appendChild(createUrlencodedRow());
+        }
+
         function selectRequest(path) {
             currentRequest = flatRequests.find(r => r.path === path);
             if (!currentRequest) return;
@@ -652,17 +786,31 @@
             document.getElementById('req-method-display').textContent = currentRequest.request.method;
             document.getElementById('req-method-display').className = `method-${currentRequest.request.method}`;
             document.getElementById('req-url-input').value = currentRequest.request.url.raw;
-            document.getElementById('req-body-input').value = currentRequest.request.body ? currentRequest.request.body.raw : '';
             
+            // Body Mode
+            const mode = (currentRequest.request.body && currentRequest.request.body.mode) || 'raw';
+            switchBodyMode(mode);
+            
+            document.getElementById('req-body-input').value = currentRequest.request.body ? (currentRequest.request.body.raw || '') : '';
+            renderUrlencoded(currentRequest.request.body ? currentRequest.request.body.urlencoded : []);
+            
+            // Scripts
+            const preReq = (currentRequest.events || []).find(e => e.listen === 'prerequest');
+            const tests = (currentRequest.events || []).find(e => e.listen === 'test');
+            document.getElementById('req-prerequest-input').value = preReq ? (preReq.script.exec.join('\n') || '') : '';
+            document.getElementById('req-tests-input').value = tests ? (tests.script.exec.join('\n') || '') : '';
+
             renderHeaders(currentRequest.request.header || []);
 
             // Restore from session cache
             const cached = responseCache[path];
             if (cached) {
-                document.getElementById('response-body').textContent = cached.body;
-                document.getElementById('response-meta').innerHTML = cached.meta;
+                document.getElementById('response-body').textContent = cached.body || '';
+                document.getElementById('resp-pane-headers').innerHTML = cached.headers || '';
+                document.getElementById('response-meta').innerHTML = cached.meta || '';
             } else {
                 document.getElementById('response-body').textContent = '// Ready';
+                document.getElementById('resp-pane-headers').innerHTML = '';
                 document.getElementById('response-meta').textContent = '';
             }
         }
@@ -697,9 +845,19 @@
             
             const method = document.getElementById('req-method-display').textContent;
             const url = document.getElementById('req-url-input').value;
-            const body = document.getElementById('req-body-input').value;
+            const bodyMode = document.querySelector('input[name="body-mode"]:checked').value;
+            const bodyRaw = document.getElementById('req-body-input').value;
             
-            const headerRows = document.querySelectorAll('.header-row');
+            const urlencodedRows = document.querySelectorAll('#req-urlencoded-list .header-row');
+            const urlencoded = Array.from(urlencodedRows).map(row => ({
+                key: row.querySelector('.urlencoded-key').value,
+                value: row.querySelector('.urlencoded-value').value
+            })).filter(u => u.key !== '');
+
+            const preReq = document.getElementById('req-prerequest-input').value;
+            const tests = document.getElementById('req-tests-input').value;
+            
+            const headerRows = document.querySelectorAll('#req-headers-list .header-row');
             const headers = Array.from(headerRows).map(row => ({
                 key: row.querySelector('.header-key').value,
                 value: row.querySelector('.header-value').value
@@ -713,10 +871,16 @@
                     newPath: currentRequest.path,
                     method: method,
                     url: url,
-                    body: body,
-                    headers: headers
+                    bodyMode: bodyMode,
+                    bodyRaw: bodyRaw,
+                    urlencoded: urlencoded,
+                    headers: headers,
+                    preRequestScript: preReq,
+                    testScript: tests
                 })
             });
+
+
 
             if (resp.ok) {
                 const data = await resp.json();
@@ -735,32 +899,64 @@
             document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === `pane-${tabName}`));
         }
 
+        function switchResponseTab(tabName) {
+            document.querySelectorAll('#response-header .tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase() === tabName));
+            document.getElementById('resp-pane-body').classList.toggle('active', tabName === 'body');
+            document.getElementById('resp-pane-headers').classList.toggle('active', tabName === 'headers');
+        }
+
         async function sendRequest() {
             if (!currentRequest) return;
             const respBodyElem = document.getElementById('response-body');
+            const respHeadersElem = document.getElementById('resp-pane-headers');
             const metaElem = document.getElementById('response-meta');
             
             respBodyElem.textContent = '// Sending...';
             const startTime = Date.now();
 
+            const bodyMode = document.querySelector('input[name="body-mode"]:checked').value;
+            const bodyRaw = document.getElementById('req-body-input').value;
+            const urlencodedRows = document.querySelectorAll('#req-urlencoded-list .header-row');
+            const urlencoded = Array.from(urlencodedRows).map(row => ({
+                key: row.querySelector('.urlencoded-key').value,
+                value: row.querySelector('.urlencoded-value').value
+            })).filter(u => u.key !== '');
+
             try {
                 const resp = await fetch('/api/send', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: currentRequest.path, body: document.getElementById('req-body-input').value })
+                    body: JSON.stringify({ 
+                        path: currentRequest.path, 
+                        bodyMode: bodyMode,
+                        bodyRaw: bodyRaw,
+                        urlencoded: urlencoded
+                    })
                 });
+
                 const data = await resp.json();
                 const duration = Date.now() - startTime;
                 
                 let metaHtml = `<span>Time: ${duration}ms</span>`;
-                let bodyHtml = data.body;
-                try {
-                    bodyHtml = JSON.stringify(JSON.parse(data.body), null, 2);
-                } catch {}
+                let bodyHtml = data.body || '';
+                
+                // Smart prettify: only if content-type contains json
+                const contentType = (data.headers['Content-Type'] || data.headers['content-type'] || [])[0] || '';
+                if (contentType.includes('json') && bodyHtml) {
+                    try {
+                        bodyHtml = JSON.stringify(JSON.parse(bodyHtml), null, 2);
+                    } catch {}
+                }
+
+                // Render headers
+                respHeadersElem.innerHTML = Object.entries(data.headers).map(([k, v]) => 
+                    `<div style="margin-bottom: 4px;"><span style="color:var(--postman-orange)">${k}:</span> ${v.join(', ')}</div>`
+                ).join('');
 
                 // Save to session cache
                 responseCache[currentRequest.path] = {
                     body: bodyHtml,
+                    headers: respHeadersElem.innerHTML,
                     meta: metaHtml
                 };
 
