@@ -352,6 +352,7 @@
         <div id="sidebar-header">
             <span id="sidebar-title">COLLECTIONS</span>
             <div id="collection-actions" style="display: flex; gap: 5px;">
+                <a href="/docs.html" target="_blank" class="sidebar-action-btn" style="text-decoration: none; display: flex; align-items: center;" title="Documentation">Docs</a>
                 <button class="sidebar-action-btn" title="Global Variables" onclick="showVariablesModal()">Vars</button>
                 <button class="sidebar-action-btn" title="New Request" onclick="showNewModal()">New</button>
                 <button class="sidebar-action-btn" title="Edit Selected" onclick="showEditModal()">Edit</button>
@@ -434,10 +435,17 @@
                     <div class="tab active" style="padding: 5px 10px; font-size: 11px;" onclick="switchResponseTab('body')">Body</div>
                     <div class="tab" style="padding: 5px 10px; font-size: 11px;" onclick="switchResponseTab('headers')">Headers</div>
                     <div class="tab" style="padding: 5px 10px; font-size: 11px;" onclick="switchResponseTab('preview')">Preview</div>
+                    <div class="tab" style="padding: 5px 10px; font-size: 11px;" onclick="switchResponseTab('diff')">Diff</div>
                 </div>
                 <div id="response-meta"></div>
             </div>
             <div id="resp-pane-body" class="pane active">
+                <div style="padding: 5px 15px; border-bottom: 1px solid #222; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 10px; color: #666; font-weight: bold;">FILTER</span>
+                    <input type="text" id="json-filter" placeholder="e.g. data.users[0].name" 
+                           style="flex: 1; background: transparent; border: none; color: #4ec9b0; font-family: monospace; font-size: 11px; outline: none;"
+                           oninput="applyJsonFilter(this.value)">
+                </div>
                 <pre id="response-body">// Select a request and hit Send</pre>
             </div>
             <div id="resp-pane-headers" class="pane" style="padding: 15px; overflow: auto; font-family: monospace; font-size: 12px; color: #a6a6a6;">
@@ -447,6 +455,16 @@
                 <iframe id="response-preview-frame" style="width: 100%; height: 100%; border: none;"></iframe>
                 <div id="response-preview-img-container" style="display: none; justify-content: center; align-items: center; height: 100%; overflow: auto;">
                     <img id="response-preview-img" style="max-width: 100%; max-height: 100%;">
+                </div>
+            </div>
+            <div id="resp-pane-diff" class="pane" style="padding: 0; display: none; flex-direction: row;">
+                <div style="flex: 1; border-right: 1px solid #222; display: flex; flex-direction: column;">
+                    <div style="padding: 5px 10px; font-size: 9px; color: #666; font-weight: bold; background: #111;">BASELINE</div>
+                    <pre id="diff-baseline" style="flex: 1; margin: 0; padding: 10px; font-size: 11px; overflow: auto; color: #888;"></pre>
+                </div>
+                <div style="flex: 1; display: flex; flex-direction: column;">
+                    <div style="padding: 5px 10px; font-size: 9px; color: #666; font-weight: bold; background: #111;">CURRENT</div>
+                    <pre id="diff-current" style="flex: 1; margin: 0; padding: 10px; font-size: 11px; overflow: auto; color: #4ec9b0;"></pre>
                 </div>
             </div>
         </div>
@@ -472,7 +490,7 @@
     <div id="edit-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Edit/Move Request</h3><div class="form-group"><label>Path</label><input type="text" id="edit-path"></div><div class="form-group"><label>Method</label><select id="edit-method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select></div><div class="form-group"><label>URL</label><input type="text" id="edit-url"></div><div class="modal-actions"><button class="btn-cancel" onclick="closeModal('edit-modal')">Cancel</button><button class="btn-save" onclick="saveEditRequest()">Update</button></div></div></div>
     <div id="variables-modal" class="modal-overlay"><div class="modal" style="width: 500px;"><h3 class="modal-title">Global Variables</h3><div id="variables-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;"></div><button class="sidebar-action-btn" onclick="addVariableRow()">+ Add Variable</button><div class="modal-actions"><button class="btn-cancel" onclick="closeModal('variables-modal')">Cancel</button><button class="btn-save" onclick="saveVariables()">Save Variables</button></div></div></div>
 
-    <!-- Variables Modal omitted for space... but exists -->
+    <!-- Code Snippet Modal -->
     <div id="code-modal" class="modal-overlay">
         <div class="modal" style="width: 600px;">
             <h3 class="modal-title">Code Snippet</h3>
@@ -503,6 +521,7 @@
         let flatRequests = [];
         let currentRequest = null;
         let responseCache = {}; 
+        let baselineCache = {};
         let menuTarget = null;
         let activeSidebar = 'collections';
 
@@ -559,6 +578,56 @@
                 });
             };
             filter(treeItems); filter(historyItems);
+        }
+
+        function applyJsonFilter(filter) {
+            if (!currentRequest) return;
+            const cached = responseCache[currentRequest.path];
+            if (!cached || !cached.body) return;
+
+            const respBodyElem = document.getElementById('response-body');
+            if (!filter.trim()) {
+                respBodyElem.textContent = cached.body;
+                return;
+            }
+
+            try {
+                const jsonObj = JSON.parse(cached.body);
+                const result = filter.split('.').reduce((obj, key) => {
+                    if (key.includes('[') && key.includes(']')) {
+                        const baseKey = key.split('[')[0];
+                        const index = parseInt(key.match(/\[(\d+)\]/)[1]);
+                        return (baseKey ? obj[baseKey] : obj)[index];
+                    }
+                    return obj[key];
+                }, jsonObj);
+                respBodyElem.textContent = JSON.stringify(result, null, 2);
+            } catch (e) {
+                respBodyElem.textContent = cached.body;
+            }
+        }
+
+        function setBaseline() {
+            if (!currentRequest) return;
+            const cached = responseCache[currentRequest.path];
+            if (!cached) return alert("Run a request first");
+            baselineCache[currentRequest.path] = { ...cached };
+            alert("Baseline set for this request!");
+        }
+
+        function renderDiff() {
+            if (!currentRequest) return;
+            const current = responseCache[currentRequest.path];
+            const baseline = baselineCache[currentRequest.path];
+            const basePre = document.getElementById('diff-baseline');
+            const currPre = document.getElementById('diff-current');
+            if (!baseline) {
+                basePre.textContent = "// No baseline set.\n// Click 'Set as Baseline' after a successful request.";
+                currPre.textContent = current ? current.body : "";
+                return;
+            }
+            basePre.textContent = baseline.body;
+            currPre.textContent = current ? current.body : "";
         }
 
         async function init() {
@@ -875,6 +944,9 @@
             document.getElementById('resp-pane-body').classList.toggle('active', tab === 'body');
             document.getElementById('resp-pane-headers').classList.toggle('active', tab === 'headers');
             document.getElementById('resp-pane-preview').classList.toggle('active', tab === 'preview');
+            document.getElementById('resp-pane-diff').classList.toggle('active', tab === 'diff');
+            document.getElementById('resp-pane-diff').style.display = tab === 'diff' ? 'flex' : 'none';
+            if (tab === 'diff') renderDiff();
         }
 
         async function sendRequest() {
@@ -910,31 +982,21 @@
                 let metaHtml = `Status: <span style="color:${color};font-weight:bold">${data.statusCode} ${displayStatus}</span> • Time: ${duration}ms`;
                 let body = data.body || '';
                 
-                // Headers parsing
                 const headers = data.headers || {};
                 const ct = (headers['Content-Type'] || headers['content-type'] || [])[0] || '';
-                
-                if (ct.includes('json') && body) {
-                    try { body = JSON.stringify(JSON.parse(body), null, 2); } catch {}
-                }
+                if (ct.includes('json') && body) { try { body = JSON.stringify(JSON.parse(body), null, 2); } catch {} }
 
-                // Update Preview
                 if (ct.includes('text/html')) {
-                    previewFrame.style.display = 'block';
-                    previewFrame.srcdoc = body;
+                    previewFrame.style.display = 'block'; previewFrame.srcdoc = body;
                 } else if (ct.includes('image/')) {
-                    // For images, we might need base64 from backend or handle binary
-                    // Current backend returns string body. If it's valid base64 or raw:
-                    previewImgContainer.style.display = 'flex';
-                    previewImg.src = `data:${ct};base64,${body}`;
+                    previewImgContainer.style.display = 'flex'; previewImg.src = `data:${ct};base64,${body}`;
                 } else {
-                    previewFrame.style.display = 'block';
-                    previewFrame.srcdoc = `<div style="padding:20px; font-family:sans-serif; color:#666;">Preview not available for ${ct}</div>`;
+                    previewFrame.style.display = 'block'; previewFrame.srcdoc = `<div style="padding:20px; font-family:sans-serif; color:#666;">Preview not available for ${ct}</div>`;
                 }
 
                 respHeaders.innerHTML = Object.entries(headers).map(([k, v]) => `<div><span style="color:var(--postman-orange)">${k}:</span> ${v.join(', ')}</div>`).join('');
                 responseCache[currentRequest.path] = { body, headers: respHeaders.innerHTML, meta: metaHtml };
-                meta.innerHTML = `<div style="display:flex;gap:15px;align-items:center"><span>${metaHtml}</span><button class="sidebar-action-btn" onclick="saveAsMock()">Save as Mock</button></div>`;
+                meta.innerHTML = `<div style="display:flex;gap:15px;align-items:center"><span>${metaHtml}</span><button class="sidebar-action-btn" onclick="setBaseline()">Set as Baseline</button><button class="sidebar-action-btn" onclick="saveAsMock()">Save as Mock</button></div>`;
                 respBody.textContent = body;
                 if (activeSidebar === 'history') renderHistory();
             } catch (e) { respBody.textContent = '// Error: ' + e.message; }
