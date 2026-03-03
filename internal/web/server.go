@@ -10,6 +10,7 @@ import (
 	"postit/internal/processor"
 	"postit/internal/storage"
 	"strings"
+	"time"
 )
 
 //go:embed static/*
@@ -21,15 +22,17 @@ type Server struct {
 	Client     *api.Client
 	Collection models.Collection
 	FlatList   []models.RequestInfo
+	EnableMock bool
 }
 
-func NewServer(store *storage.Manager, proc *processor.ScriptProcessor, client *api.Client, col models.Collection, flat []models.RequestInfo) *Server {
+func NewServer(store *storage.Manager, proc *processor.ScriptProcessor, client *api.Client, col models.Collection, flat []models.RequestInfo, enableMock bool) *Server {
 	return &Server{
 		Storage:    store,
 		Processor:  proc,
 		Client:     client,
 		Collection: col,
 		FlatList:   flat,
+		EnableMock: enableMock,
 	}
 }
 
@@ -37,13 +40,145 @@ func (s *Server) Start(port int) error {
 	http.HandleFunc("/api/requests", s.handleGetRequests)
 	http.HandleFunc("/api/requests/new", s.handleNewRequest)
 	http.HandleFunc("/api/requests/duplicate", s.handleDuplicateRequest)
+	http.HandleFunc("/api/requests/reorder", s.handleReorderRequest)
 	http.HandleFunc("/api/requests/update", s.handleUpdateRequest)
 	http.HandleFunc("/api/variables", s.handleVariables)
+	http.HandleFunc("/api/history", s.handleGetHistory)
+	http.HandleFunc("/api/history/clear", s.handleClearHistory)
+	http.HandleFunc("/api/history/delete", s.handleDeleteHistory)
 	http.HandleFunc("/api/send", s.handleSendRequest)
+	http.HandleFunc("/api/mock/save", s.handleSaveMockResponse)
+	
+	if s.EnableMock {
+		http.HandleFunc("/mock/", s.handleMockRequest)
+		fmt.Printf("Mock server enabled at http://localhost:%d/mock/\n", port)
+	} else {
+		http.HandleFunc("/mock/", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintln(w, "Mock server is disabled. Start with -mock flag to enable it.")
+		})
+	}
+
 	http.Handle("/", http.FileServer(http.FS(staticAssets)))
 
 	fmt.Printf("Web UI started at http://localhost:%d\n", port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+}
+
+func (s *Server) handleGetHistory(w http.ResponseWriter, r *http.Request) {
+	history := s.Storage.LoadHistory()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(history)
+}
+
+func (s *Server) handleClearHistory(w http.ResponseWriter, r *http.Request) {
+	s.Storage.SaveHistory([]models.HistoryRecord{})
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleDeleteHistory(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Timestamp time.Time `json:"timestamp"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	history := s.Storage.LoadHistory()
+	var newHistory []models.HistoryRecord
+	for _, h := range history {
+		if !h.Timestamp.Equal(input.Timestamp) {
+			newHistory = append(newHistory, h)
+		}
+	}
+	s.Storage.SaveHistory(newHistory)
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleSaveMockResponse(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct {
+		Path     string              `json:"path"`
+		Name     string              `json:"name"`
+		Code     int                 `json:"code"`
+		Status   string              `json:"status"`
+		Body     string              `json:"body"`
+		Headers  []models.Header     `json:"headers"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	for i, req := range s.FlatList {
+		if req.Path == input.Path {
+			newMock := models.MockResponse{
+				Name:   input.Name,
+				Code:   input.Code,
+				Status: input.Status,
+				Body:   input.Body,
+				Header: input.Headers,
+			}
+			s.FlatList[i].Responses = append(s.FlatList[i].Responses, newMock)
+			s.Storage.SaveSingleRequest(s.FlatList[i])
+			
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(newMock)
+			return
+		}
+	}
+
+	http.Error(w, "Request not found", http.StatusNotFound)
+}
+
+func (s *Server) handleMockRequest(w http.ResponseWriter, r *http.Request) {
+	mockPath := strings.TrimPrefix(r.URL.Path, "/mock")
+	if mockPath == "" { mockPath = "/" }
+
+	fmt.Printf("Mock request received: %s %s\n", r.Method, mockPath)
+
+	for _, reqInfo := range s.FlatList {
+		// Basic path matching: resolve variables in saved URL and compare paths
+		resolvedURL := s.Processor.ResolveVariables(reqInfo.Request.URL.Raw)
+		
+		// Remove protocol and host to compare just the path
+		savedPath := resolvedURL
+		if idx := strings.Index(savedPath, "://"); idx != -1 {
+			savedPath = savedPath[idx+3:]
+		}
+		if idx := strings.Index(savedPath, "/"); idx != -1 {
+			savedPath = savedPath[idx:]
+		} else {
+			savedPath = "/"
+		}
+
+		// Simple matching (ignoring query params for now)
+		savedPathOnly := strings.Split(savedPath, "?")[0]
+		incomingPathOnly := strings.Split(mockPath, "?")[0]
+
+		if savedPathOnly == incomingPathOnly && strings.EqualFold(reqInfo.Request.Method, r.Method) {
+			if len(reqInfo.Responses) > 0 {
+				// For now, return the first mock response
+				mock := reqInfo.Responses[0]
+				
+				for _, h := range mock.Header {
+					w.Header().Add(h.Key, s.Processor.ResolveVariables(h.Value))
+				}
+				
+				w.WriteHeader(mock.Code)
+				w.Write([]byte(s.Processor.ResolveVariables(mock.Body)))
+				return
+			}
+		}
+	}
+
+	w.WriteHeader(http.StatusNotFound)
+	fmt.Fprintf(w, "No mock response found for %s %s", r.Method, mockPath)
 }
 
 func (s *Server) handleVariables(w http.ResponseWriter, r *http.Request) {
@@ -186,6 +321,7 @@ func (s *Server) handleNewRequest(w http.ResponseWriter, r *http.Request) {
 			},
 			Header: input.Headers,
 		},
+		Order: len(s.FlatList),
 	}
 
 	// Update Events (Scripts)
@@ -261,6 +397,7 @@ func (s *Server) handleDuplicateRequest(w http.ResponseWriter, r *http.Request) 
 		Path:    input.NewPath,
 		Request: target.Request.DeepCopy(),
 		Events:  eventsCopy,
+		Order:   target.Order + 1,
 	}
 
 	s.Storage.SaveSingleRequest(newReq)
@@ -270,6 +407,50 @@ func (s *Server) handleDuplicateRequest(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(newReq)
 }
 
+
+func (s *Server) handleReorderRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct {
+		Path1 string `json:"path1"`
+		Path2 string `json:"path2"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var idx1, idx2 = -1, -1
+	for i, req := range s.FlatList {
+		if req.Path == input.Path1 {
+			idx1 = i
+		}
+		if req.Path == input.Path2 {
+			idx2 = i
+		}
+	}
+
+	if idx1 == -1 || idx2 == -1 {
+		http.Error(w, "One or more requests not found", http.StatusNotFound)
+		return
+	}
+
+	// Swap orders
+	s.FlatList[idx1].Order, s.FlatList[idx2].Order = s.FlatList[idx2].Order, s.FlatList[idx1].Order
+	if s.FlatList[idx1].Order == s.FlatList[idx2].Order {
+		s.FlatList[idx1].Order++
+	}
+
+	s.Storage.SaveSingleRequest(s.FlatList[idx1])
+	s.Storage.SaveSingleRequest(s.FlatList[idx2])
+
+	s.Collection.Item = models.ReconstructItems(s.FlatList)
+
+	w.WriteHeader(http.StatusOK)
+}
 
 func (s *Server) handleGetRequests(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -318,15 +499,49 @@ func (s *Server) handleSendRequest(w http.ResponseWriter, r *http.Request) {
 
 	s.Processor.RunScripts(target.Events, "test", nil, nil, target.Request.Header)
 
-	body, headers := s.Client.ExecuteRequest(target.Request)
+	startTime := javaTimeNow()
+	body, headers, statusCode, statusText := s.Client.ExecuteRequest(target.Request)
+	duration := javaTimeNow() - startTime
 	
+	// Record History
+	go func() {
+		history := s.Storage.LoadHistory()
+		record := models.HistoryRecord{
+			Timestamp:  javaTimeFromMillis(startTime),
+			Path:       target.Path,
+			Method:     target.Request.Method,
+			URL:        s.Processor.ResolveVariables(target.Request.URL.Raw),
+			StatusCode: statusCode,
+			StatusText: statusText,
+			Duration:   duration,
+		}
+		history = append(history, record)
+		s.Storage.SaveHistory(history)
+	}()
+
 	if body != "" {
 		s.Processor.RunScripts(target.Events, "test", []byte(body), headers, target.Request.Header)
 	}
 
+	if headers == nil {
+		headers = make(map[string][]string)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"body":    body,
-		"headers": headers,
+		"body":       body,
+		"headers":    headers,
+		"statusCode": statusCode,
+		"statusText": statusText,
 	})
 }
+
+// Helper to match JS Date.now()
+func javaTimeNow() int64 {
+	return time.Now().UnixNano() / int64(time.Millisecond)
+}
+
+func javaTimeFromMillis(ms int64) time.Time {
+	return time.Unix(0, ms*int64(time.Millisecond))
+}
+

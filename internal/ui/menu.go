@@ -117,6 +117,7 @@ func (m *Menu) CreateNewRequest() *models.RequestInfo {
 			Method: method,
 			URL:    models.URL{Raw: url},
 		},
+		Order: 999, // Will be sorted
 	}
 
 	m.Storage.SaveSingleRequest(newReq)
@@ -152,6 +153,7 @@ func (m *Menu) DuplicateRequest(reqInfo *models.RequestInfo) *models.RequestInfo
 		Path:    newPath,
 		Request: reqInfo.Request.DeepCopy(),
 		Events:  eventsCopy,
+		Order:   reqInfo.Order + 1,
 	}
 
 	m.Storage.SaveSingleRequest(newReq)
@@ -159,12 +161,75 @@ func (m *Menu) DuplicateRequest(reqInfo *models.RequestInfo) *models.RequestInfo
 	return &newReq
 }
 
+func (m *Menu) MoveRequest(reqInfo *models.RequestInfo) {
+	newPath := ""
+	survey.AskOne(&survey.Input{
+		Message: "New Path (e.g. Folder > Name):",
+		Default: reqInfo.Path,
+	}, &newPath)
+
+	if newPath != "" && newPath != reqInfo.Path {
+		reqInfo.Path = newPath
+		m.Storage.SaveSingleRequest(*reqInfo)
+		fmt.Printf("Request moved to: %s\n", newPath)
+	}
+}
+
+func (m *Menu) ReorderRequests(allRequests *[]models.RequestInfo) {
+	options := []string{"Finish"}
+	for _, r := range *allRequests {
+		options = append(options, r.Path)
+	}
+
+	for {
+		selected := ""
+		survey.AskOne(&survey.Select{
+			Message: "Select request to move UP:",
+			Options: options,
+		}, &selected)
+
+		if selected == "Finish" {
+			break
+		}
+
+		idx := -1
+		for i, r := range *allRequests {
+			if r.Path == selected {
+				idx = i
+				break
+			}
+		}
+
+		if idx > 0 {
+			// Swap with previous
+			(*allRequests)[idx].Order, (*allRequests)[idx-1].Order = (*allRequests)[idx-1].Order, (*allRequests)[idx].Order
+			
+			// If orders were same, force differentiation
+			if (*allRequests)[idx].Order == (*allRequests)[idx-1].Order {
+				(*allRequests)[idx-1].Order--
+			}
+
+			m.Storage.SaveSingleRequest((*allRequests)[idx])
+			m.Storage.SaveSingleRequest((*allRequests)[idx-1])
+
+			// Re-sort options for the next iteration
+			options = []string{"Finish"}
+			for _, r := range *allRequests {
+				options = append(options, r.Path)
+			}
+			fmt.Println("Moved up!")
+		} else if idx == 0 {
+			fmt.Println("Already at the top!")
+		}
+	}
+}
+
 func (m *Menu) HandleRequestSelection(reqInfo *models.RequestInfo, allRequests *[]models.RequestInfo) {
 	for {
 		action := ""
 		prompt := &survey.Select{
 			Message: fmt.Sprintf("Action for [%s]:", reqInfo.Path),
-			Options: []string{"Send", "Edit Body", "Edit Headers", "Duplicate", "Back"},
+			Options: []string{"Send", "Edit Body", "Edit Headers", "Move/Rename", "Duplicate", "Reorder All", "Back"},
 		}
 		survey.AskOne(prompt, &action)
 
@@ -174,7 +239,8 @@ func (m *Menu) HandleRequestSelection(reqInfo *models.RequestInfo, allRequests *
 			m.Processor.RunScripts(reqInfo.Events, "prerequest", nil, nil, reqInfo.Request.Header)
 			m.Processor.RunScripts(reqInfo.Events, "test", nil, nil, reqInfo.Request.Header)
 			
-			respBody, respHeaders := m.Client.ExecuteRequest(reqInfo.Request)
+			respBody, respHeaders, statusCode, statusText := m.Client.ExecuteRequest(reqInfo.Request)
+			fmt.Printf("\nResponse Status: %d %s\n", statusCode, statusText)
 			
 			if respBody != "" || len(respHeaders) > 0 {
 				fmt.Println("\n--- Executing Scripts AFTER Request ---")
@@ -187,11 +253,15 @@ func (m *Menu) HandleRequestSelection(reqInfo *models.RequestInfo, allRequests *
 			if m.EditRequestHeaders(reqInfo.Request) {
 				m.Storage.SaveSingleRequest(*reqInfo)
 			}
+		case "Move/Rename":
+			m.MoveRequest(reqInfo)
 		case "Duplicate":
 			if newReq := m.DuplicateRequest(reqInfo); newReq != nil {
 				*allRequests = append(*allRequests, *newReq)
 			}
 			return
+		case "Reorder All":
+			m.ReorderRequests(allRequests)
 		case "Back":
 			return
 		}

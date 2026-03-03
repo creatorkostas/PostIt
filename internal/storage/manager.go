@@ -14,6 +14,7 @@ type Manager struct {
 	OutputDir     string
 	VarsPath      string
 	HeadersPath   string
+	HistoryPath   string
 	VariableMap   map[string]string
 	GlobalHeaders []models.Header
 }
@@ -23,6 +24,7 @@ func NewManager(outputDir string) *Manager {
 		OutputDir:     outputDir,
 		VarsPath:      filepath.Join(outputDir, "variables.json"),
 		HeadersPath:   filepath.Join(outputDir, "global_headers.json"),
+		HistoryPath:   filepath.Join(outputDir, "history.json"),
 		VariableMap:   make(map[string]string),
 		GlobalHeaders: []models.Header{},
 	}
@@ -35,6 +37,23 @@ func (m *Manager) Init() error {
 	m.LoadVariables()
 	m.LoadGlobalHeaders()
 	return nil
+}
+
+func (m *Manager) LoadHistory() []models.HistoryRecord {
+	var history []models.HistoryRecord
+	if data, err := ioutil.ReadFile(m.HistoryPath); err == nil {
+		json.Unmarshal(data, &history)
+	}
+	return history
+}
+
+func (m *Manager) SaveHistory(history []models.HistoryRecord) {
+	// Keep last 50
+	if len(history) > 50 {
+		history = history[len(history)-50:]
+	}
+	data, _ := json.MarshalIndent(history, "", "  ")
+	ioutil.WriteFile(m.HistoryPath, data, 0644)
 }
 
 func (m *Manager) LoadVariables() {

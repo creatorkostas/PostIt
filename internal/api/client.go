@@ -20,7 +20,7 @@ func NewClient(store *storage.Manager, proc *processor.ScriptProcessor) *Client 
 	return &Client{Storage: store, Processor: proc}
 }
 
-func (c *Client) ExecuteRequest(req *models.Request) (string, map[string][]string) {
+func (c *Client) ExecuteRequest(req *models.Request) (string, map[string][]string, int, string) {
 	client := resty.New()
 	url := c.Processor.ResolveVariables(req.URL.Raw)
 	method := strings.ToUpper(req.Method)
@@ -78,12 +78,12 @@ func (c *Client) ExecuteRequest(req *models.Request) (string, map[string][]strin
 	case "DELETE": resp, err = r.Delete(url)
 	case "PATCH": resp, err = r.Patch(url)
 	default:
-		return "", nil
+		return "", nil, 0, ""
 	}
 
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
-		return "", nil
+		return "", nil, 0, fmt.Sprintf("Error: %v", err)
 	}
 
 	fmt.Printf("Status: %s (%v)\n", resp.Status(), resp.Time())
@@ -97,5 +97,5 @@ func (c *Client) ExecuteRequest(req *models.Request) (string, map[string][]strin
 			fmt.Println(body)
 		}
 	}
-	return body, resp.Header()
+	return body, resp.Header(), resp.StatusCode(), resp.Status()
 }
