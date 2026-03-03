@@ -6,515 +6,348 @@
     <title>PostIt - Web Client</title>
     <style>
         :root {
-            --bg-app: #1c1c1c;
-            --bg-sidebar: #212121;
-            --bg-item-hover: #2a2a2a;
-            --bg-item-active: #333333;
-            --border-color: #333333;
-            --text-main: #e6e6e6;
-            --text-secondary: #a6a6a6;
-            --postman-orange: #ff6c37;
-            --method-get: #0cbb52;
-            --method-post: #ffb400;
-            --method-put: #097bed;
-            --method-delete: #eb2013;
+            --bg-app: #0d0d0f;
+            --bg-sidebar: #141416;
+            --bg-input: #1a1a1e;
+            --bg-item-hover: #222226;
+            --bg-item-active: #2a2a2f;
+            --border-color: #26262a;
+            --border-focus: #3f3f46;
+            --text-main: #f4f4f5;
+            --text-secondary: #a1a1aa;
+            --accent: #ff6c37;
+            --accent-hover: #ff8559;
+            --method-get: #4ade80;
+            --method-post: #fbbf24;
+            --method-put: #60a5fa;
+            --method-delete: #f87171;
+            --method-patch: #a78bfa;
+            --radius: 6px;
+            --transition: all 0.2s ease;
         }
 
         body {
             margin: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background: var(--bg-app);
             color: var(--text-main);
             display: flex;
             height: 100vh;
             overflow: hidden;
+            -webkit-font-smoothing: antialiased;
         }
 
         /* Sidebar */
         #sidebar {
-            width: 350px;
+            width: 320px;
             background: var(--bg-sidebar);
             border-right: 1px solid var(--border-color);
             display: flex;
             flex-direction: column;
-            min-width: 250px;
+            min-width: 200px;
         }
 
-        #sidebar-header {
+        #sidebar-search-container {
             padding: 16px;
-            font-size: 14px;
-            font-weight: 600;
             border-bottom: 1px solid var(--border-color);
-            color: var(--postman-orange);
+        }
+
+        #sidebar-search {
+            width: 100%;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 8px 12px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            box-sizing: border-box;
+            outline: none;
+            transition: var(--transition);
+        }
+        #sidebar-search:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
+
+        #sidebar-tabs {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            padding: 4px 16px; gap: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        #sidebar-tabs .tab {
+            padding: 8px 0;
+            font-size: 11px; font-weight: 600;
+            letter-spacing: 0.05em; color: var(--text-secondary);
+            cursor: pointer; border-bottom: 2px solid transparent;
+            transition: var(--transition);
+        }
+        #sidebar-tabs .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+        #sidebar-header {
+            padding: 12px 16px; font-size: 10px; font-weight: 800;
+            text-transform: uppercase; letter-spacing: 0.05em;
+            color: var(--text-secondary); display: flex;
+            justify-content: space-between; align-items: center;
         }
 
         .sidebar-action-btn {
-            background: transparent;
-            border: 1px solid var(--border-color);
-            color: var(--text-secondary);
-            cursor: pointer;
-            padding: 2px 8px;
-            border-radius: 3px;
-            font-size: 11px;
+            background: var(--bg-input); border: 1px solid var(--border-color);
+            color: var(--text-main); cursor: pointer; padding: 4px 10px;
+            border-radius: 4px; font-size: 11px; font-weight: 500;
+            transition: var(--transition);
         }
-        .sidebar-action-btn:hover { color: white; border-color: #666; }
+        .sidebar-action-btn:hover { background: var(--bg-item-hover); border-color: var(--border-focus); }
 
-        /* Modals */
-        .modal-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.7);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        .modal-overlay.show { display: flex; }
-        .modal {
-            background: var(--bg-sidebar);
-            border: 1px solid var(--border-color);
-            padding: 25px;
-            border-radius: 5px;
-            width: 400px;
-        }
-        .modal-title { margin-top: 0; margin-bottom: 20px; font-size: 16px; color: var(--postman-orange); }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 5px; }
-        .form-group input, .form-group select {
-            width: 100%;
-            background: #2d2d2d;
-            border: 1px solid var(--border-color);
-            color: white;
-            padding: 8px;
-            border-radius: 3px;
-            box-sizing: border-box;
-        }
-        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-        .btn-cancel { background: transparent; border: 1px solid var(--border-color); color: white; padding: 8px 15px; border-radius: 3px; cursor: pointer; }
-        .btn-save { background: var(--postman-orange); border: none; color: white; padding: 8px 15px; border-radius: 3px; cursor: pointer; font-weight: bold; }
-
-
-        #collection-tree {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px 0;
-        }
+        #collection-tree, #history-list { flex: 1; overflow-y: auto; padding: 8px 0; }
 
         .folder {
-            padding: 5px 15px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 13px;
-            color: var(--text-secondary);
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            padding: 8px 16px; cursor: pointer; font-size: 13px; font-weight: 500;
+            color: var(--text-main); display: flex; align-items: center; gap: 10px;
+            transition: var(--transition); border-radius: 4px; margin: 0 8px;
         }
-        .folder::before { content: '📁'; font-size: 10px; }
-        .folder.expanded::before { content: '📂'; }
-
-        .folder-content {
-            padding-left: 15px;
-            display: none;
+        .folder:hover { background: var(--bg-item-hover); }
+        .folder::before {
+            content: ''; display: inline-block; width: 6px; height: 6px;
+            border-right: 2px solid var(--text-secondary); border-bottom: 2px solid var(--text-secondary);
+            transform: rotate(-45deg); transition: transform 0.2s ease; margin-right: 12px; margin-left: 4px;
         }
+        .folder.expanded::before { transform: rotate(45deg); }
+        .folder-content { padding-left: 20px; display: none; }
         .folder-content.show { display: block; }
 
         .request-item {
-            padding: 6px 15px;
-            cursor: pointer;
-            font-size: 12px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            position: relative;
+            padding: 8px 16px; cursor: pointer; font-size: 13px;
+            display: flex; align-items: center; gap: 12px;
+            transition: var(--transition); border-radius: 4px; margin: 0 8px;
         }
         .request-item:hover { background: var(--bg-item-hover); }
-        .request-item.active { background: var(--bg-item-active); border-left: 2px solid var(--postman-orange); }
+        .request-item.active { background: var(--bg-item-active); color: white; }
 
-        .method-tag {
-            font-size: 9px;
-            font-weight: 800;
-            width: 35px;
-            flex-shrink: 0;
-        }
+        .method-tag { font-size: 9px; font-weight: 700; width: 32px; text-align: center; flex-shrink: 0; }
         .method-GET { color: var(--method-get); }
         .method-POST { color: var(--method-post); }
         .method-PUT { color: var(--method-put); }
         .method-DELETE { color: var(--method-delete); }
+        .method-PATCH { color: var(--method-patch); }
         .status-0 { color: #eb2013; }
 
-        /* Context Menu */
-        #context-menu {
-            position: fixed;
-            background: var(--bg-sidebar);
-            border: 1px solid var(--border-color);
-            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
-            z-index: 2000;
-            display: none;
-            flex-direction: column;
-            padding: 5px 0;
-            border-radius: 4px;
-        }
-        .context-menu-item {
-            padding: 8px 20px;
-            font-size: 12px;
-            cursor: pointer;
-            color: var(--text-main);
-        }
-        .context-menu-item:hover { background: var(--bg-item-hover); color: var(--postman-orange); }
-
         /* Main Content */
-        #main {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-width: 0;
-        }
+        #main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg-app); }
+        #request-header { padding: 24px; border-bottom: 1px solid var(--border-color); }
+        .toolbar { display: flex; gap: 12px; margin-bottom: 16px; }
+        .btn-primary { background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: var(--radius); font-weight: 600; font-size: 13px; cursor: pointer; transition: var(--transition); }
+        .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+        .btn-secondary { background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: var(--radius); font-weight: 500; font-size: 13px; cursor: pointer; transition: var(--transition); }
+        .btn-secondary:hover { background: var(--bg-item-hover); border-color: var(--border-focus); }
 
-        /* URL Bar */
-        #request-header {
-            padding: 20px;
-            border-bottom: 1px solid var(--border-color);
-        }
+        .url-bar-container { display: flex; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius); overflow: hidden; transition: var(--transition); }
+        .url-bar-container:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
+        #req-method-display { padding: 0 16px; font-weight: 700; font-size: 12px; display: flex; align-items: center; background: var(--bg-item-active); min-width: 60px; justify-content: center; border-right: 1px solid var(--border-color); }
+        #req-url-input { flex: 1; background: transparent; border: none; color: var(--text-main); padding: 10px 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; outline: none; }
+        #send-btn { background: var(--accent); color: white; border: none; padding: 0 24px; font-weight: 700; cursor: pointer; font-size: 13px; transition: var(--transition); }
+        #send-btn:hover { background: var(--accent-hover); }
 
-        .url-bar-container {
-            display: flex;
-            width: 100%;
-            height: 40px;
-            background: #2d2d2d;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            overflow: hidden;
-        }
+        .tabs-container { padding: 0 24px; border-bottom: 1px solid var(--border-color); display: flex; gap: 24px; }
+        .tabs-container .tab { padding: 14px 0; font-size: 13px; font-weight: 500; color: var(--text-secondary); cursor: pointer; border-bottom: 2px solid transparent; transition: var(--transition); }
+        .tabs-container .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-        #req-method-display {
-            padding: 0 15px;
-            font-weight: bold;
-            font-size: 13px;
-            display: flex;
-            align-items: center;
-            border-right: 1px solid var(--border-color);
-            background: #333;
-            min-width: 60px;
-            justify-content: center;
-        }
-
-        #req-url-input {
-            flex: 1;
-            background: transparent;
-            border: none;
-            color: var(--text-main);
-            padding: 0 12px;
-            font-family: 'Consolas', monospace;
-            font-size: 13px;
-            outline: none;
-            min-width: 0;
-        }
-
-        #send-btn {
-            background: var(--postman-orange);
-            color: white;
-            border: none;
-            padding: 0 30px;
-            font-weight: bold;
-            cursor: pointer;
-            font-size: 13px;
-            transition: opacity 0.2s;
-        }
-        #send-btn:hover { opacity: 0.9; }
-
-        #save-btn {
-            background: transparent;
-            color: var(--text-secondary);
-            border: 1px solid var(--border-color);
-            padding: 0 15px;
-            font-weight: bold;
-            cursor: pointer;
-            font-size: 13px;
-            margin-right: 10px;
-            border-radius: 4px;
-        }
-        #save-btn:hover { color: white; border-color: #666; }
-
-        /* Tabs & Editors */
-        .tabs {
-            display: flex;
-            gap: 20px;
-            border-bottom: 1px solid var(--border-color);
-            padding: 0 20px;
-        }
-        .tab {
-            padding: 12px 0;
-            font-size: 13px;
-            color: var(--text-secondary);
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-        }
-        .tab.active {
-            color: var(--text-main);
-            border-bottom: 2px solid var(--postman-orange);
-        }
-
-        #editor-container {
-            flex: 1;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
+        #editor-container { flex: 1; padding: 24px; display: flex; flex-direction: column; overflow: hidden; }
         .pane { display: none; height: 100%; }
         .pane.active { display: flex; flex-direction: column; }
 
-        textarea {
-            flex: 1;
-            background: #181818;
-            border: 1px solid var(--border-color);
-            color: #dcdcaa;
-            padding: 15px;
-            font-family: 'Consolas', monospace;
-            font-size: 14px;
-            resize: none;
-            outline: none;
-        }
+        .code-editor-container { flex: 1; position: relative; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius); overflow: hidden; }
+        .code-editor-textarea, .code-editor-pre { position: absolute; top: 0; left: 0; right: 0; bottom: 0; margin: 0; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; border: none; outline: none; box-sizing: border-box; background: transparent; }
+        .code-editor-textarea { color: transparent; caret-color: white; resize: none; z-index: 2; }
+        .code-editor-pre { color: #d1d1d1; z-index: 1; pointer-events: none; }
 
-        .header-row {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-        .header-row input {
-            background: #2d2d2d;
-            border: 1px solid var(--border-color);
-            color: white;
-            padding: 5px 10px;
-            font-size: 12px;
-            flex: 1;
-        }
-        .btn-remove-header {
-            background: transparent;
-            border: none;
-            color: #ff4d4d;
-            cursor: pointer;
-            font-weight: bold;
-            padding: 0 5px;
-        }
+        textarea#req-prerequest-input, textarea#req-tests-input { flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); color: #d1d1d1; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.6; border-radius: var(--radius); resize: none; outline: none; }
 
+        .header-row { display: flex; gap: 8px; margin-bottom: 8px; }
+        .header-row input { background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 8px 12px; font-size: 12px; border-radius: 4px; flex: 1; outline: none; }
 
         /* Response */
-        #response-container {
-            height: 40%;
-            background: #181818;
-            border-top: 1px solid var(--border-color);
-            display: flex;
-            flex-direction: column;
-        }
-        #response-header {
-            padding: 10px 20px;
-            font-size: 12px;
-            color: #888;
-            display: flex;
-            justify-content: space-between;
-            background: #212121;
-        }
-        #response-meta {
-            display: flex;
-            align-items: center;
-        }
-        #response-body {
-            flex: 1;
-            padding: 15px;
-            overflow: auto;
-            font-family: 'Consolas', monospace;
-            font-size: 13px;
-            color: #4ec9b0;
-            white-space: pre-wrap;
-            margin: 0;
-        }
+        #response-container { height: 40%; background: #09090b; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; }
+        #response-header { padding: 8px 24px; display: flex; justify-content: space-between; align-items: center; background: var(--bg-sidebar); border-bottom: 1px solid var(--border-color); }
+        #response-meta { font-size: 12px; color: var(--text-secondary); }
+        #response-body { flex: 1; padding: 16px; overflow: auto; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #d1d1d1; white-space: pre-wrap; margin: 0; }
+
+        .json-key { color: #9cdcfe; }
+        .json-string { color: #ce9178; }
+        .json-number { color: #b5cea8; }
+        .json-boolean { color: #569cd6; }
+        .json-null { color: #569cd6; }
+
+        .filter-bar { background: var(--bg-sidebar); padding: 6px 16px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; }
+        .filter-bar span { font-size: 10px; font-weight: 800; color: var(--text-secondary); }
+        .filter-bar input { flex: 1; background: transparent; border: none; color: #4ade80; font-family: 'JetBrains Mono', monospace; font-size: 12px; outline: none; }
+
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(4px); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .modal-overlay.show { display: flex; }
+        .modal { background: var(--bg-sidebar); border: 1px solid var(--border-color); padding: 32px; border-radius: 12px; width: 440px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+        .modal-title { margin: 0 0 24px 0; font-size: 18px; font-weight: 600; color: var(--accent); }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; }
+        .form-group input, .form-group select { width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 10px 12px; border-radius: var(--radius); box-sizing: border-box; outline: none; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 32px; }
+
+        /* History */
+        .history-item { border-bottom: 1px solid var(--border-color); padding: 12px 16px; display: flex; flex-direction: column; gap: 4px; position: relative; }
+        .history-item:hover { background: var(--bg-item-hover); }
+        .history-meta { display: flex; justify-content: space-between; align-items: center; }
+        .history-path { font-size: 13px; font-weight: 600; color: var(--text-main); }
+        .history-url { font-size: 11px; color: var(--text-secondary); opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .history-footer { font-size: 10px; color: var(--text-secondary); margin-top: 4px; }
+
+        /* JWT Styles */
+        .jwt-section { margin-bottom: 24px; }
+        .jwt-label { font-size: 10px; font-weight: 800; color: var(--accent); margin-bottom: 8px; text-transform: uppercase; }
+        .jwt-box { background: var(--bg-input); padding: 16px; border-radius: 8px; font-family: monospace; font-size: 12px; border: 1px solid var(--border-color); }
+
+        /* Resizers */
+        .resizer-h { width: 4px; cursor: col-resize; background: transparent; transition: background 0.2s; z-index: 10; }
+        .resizer-h:hover, .resizer-h.active { background: var(--accent); }
+        .resizer-v { height: 4px; cursor: row-resize; background: transparent; transition: background 0.2s; z-index: 10; }
+        .resizer-v:hover, .resizer-v.active { background: var(--accent); }
+
+        #sidebar-top-tools { padding: 8px 16px; display: flex; gap: 8px; border-bottom: 1px solid var(--border-color); }
+        #context-menu { position: fixed; background: var(--bg-sidebar); border: 1px solid var(--border-color); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.4); z-index: 2000; display: none; flex-direction: column; padding: 4px; border-radius: 8px; min-width: 160px; }
+        .context-menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; border-radius: 4px; color: var(--text-main); transition: var(--transition); }
+        .context-menu-item:hover { background: var(--bg-item-hover); color: var(--accent); }
+        .context-menu-item.danger { color: var(--method-delete); }
+        .context-menu-item.danger:hover { background: rgba(248, 113, 113, 0.1); }
     </style>
 </head>
 <body>
     <div id="sidebar">
-        <div style="padding: 10px; border-bottom: 1px solid var(--border-color);">
-            <input type="text" id="sidebar-search" placeholder="Search requests..." 
-                   style="width: 100%; background: #2d2d2d; border: 1px solid var(--border-color); color: white; padding: 6px 10px; border-radius: 4px; font-size: 12px; box-sizing: border-box;"
-                   oninput="filterSidebar(this.value)">
+        <div id="sidebar-top-tools">
+            <a href="/docs.html" target="_blank" class="sidebar-action-btn" style="text-decoration: none; flex: 1; text-align: center;" title="Documentation">Docs</a>
+            <button class="sidebar-action-btn" style="flex: 1;" onclick="showVariablesModal()">Variables</button>
+            <button class="sidebar-action-btn" title="New Request" onclick="showNewModal()">+ New</button>
         </div>
-        <div id="sidebar-tabs" style="display: flex; border-bottom: 1px solid var(--border-color);">
-            <div id="tab-collections" class="tab active" style="flex: 1; text-align: center; padding: 10px; font-size: 11px; font-weight: bold;" onclick="switchSidebar('collections')">COLLECTIONS</div>
-            <div id="tab-history" class="tab" style="flex: 1; text-align: center; padding: 10px; font-size: 11px; font-weight: bold;" onclick="switchSidebar('history')">HISTORY</div>
+        <div id="sidebar-search-container">
+            <input type="text" id="sidebar-search" placeholder="Search requests..." oninput="filterSidebar(this.value)">
+        </div>
+        <div id="sidebar-tabs">
+            <div id="tab-collections" class="tab active" onclick="switchSidebar('collections')">COLLECTIONS</div>
+            <div id="tab-history" class="tab" onclick="switchSidebar('history')">HISTORY</div>
         </div>
         <div id="sidebar-header">
             <span id="sidebar-title">COLLECTIONS</span>
-            <div id="collection-actions" style="display: flex; gap: 5px;">
-                <a href="/docs.html" target="_blank" class="sidebar-action-btn" style="text-decoration: none; display: flex; align-items: center;" title="Documentation">Docs</a>
-                <button class="sidebar-action-btn" title="Global Variables" onclick="showVariablesModal()">Vars</button>
-                <button class="sidebar-action-btn" title="New Request" onclick="showNewModal()">New</button>
-                <button class="sidebar-action-btn" title="Edit Selected" onclick="showEditModal()">Edit</button>
-                <button class="sidebar-action-btn" title="Duplicate Selected" onclick="showDuplicateModal()">Copy</button>
-            </div>
-            <div id="history-actions" style="display: none; gap: 5px;">
-                <button class="sidebar-action-btn" title="Clear History" onclick="clearHistory()">Clear</button>
+            <div id="history-actions" style="display: none;">
+                <button class="sidebar-action-btn" onclick="clearHistory()">Clear History</button>
             </div>
         </div>
-        <div id="collection-tree">
-            <!-- Tree will be injected here -->
-        </div>
-        <div id="history-list" style="display: none; flex: 1; overflow-y: auto; padding: 10px 0;">
-            <!-- History items here -->
-        </div>
+        <div id="collection-tree"></div>
+        <div id="history-list" style="display: none;"></div>
     </div>
 
+    <div class="resizer-h" id="resizer-sidebar"></div>
+
     <div id="main">
-        <div id="request-header">
-            <div style="display: flex; align-items: center; margin-bottom: 10px; gap: 10px;">
-                <button id="save-btn" onclick="saveCurrentRequest()">Save Changes</button>
-                <button class="sidebar-action-btn" style="height: 30px; padding: 0 15px;" onclick="showCodeModal()">Code Snippet</button>
-            </div>
-            <div class="url-bar-container">
-                <div id="req-method-display">GET</div>
-                <input type="text" id="req-url-input" spellcheck="false" placeholder="Enter request URL">
-                <button id="send-btn" onclick="sendRequest()">Send</button>
-            </div>
-        </div>
-
-        <div class="tabs">
-            <div class="tab active" onclick="switchTab('body')">Body</div>
-            <div class="tab" onclick="switchTab('headers')">Headers</div>
-            <div class="tab" onclick="switchTab('mocks')">Mocks</div>
-            <div class="tab" onclick="switchTab('scripts')">Pre-request</div>
-            <div class="tab" onclick="switchTab('tests')">Post-request</div>
-        </div>
-
-        <div id="editor-container">
-            <div id="pane-body" class="pane active">
-                <div style="margin-bottom: 10px; display: flex; gap: 15px; font-size: 12px; color: var(--text-secondary);">
-                    <label><input type="radio" name="body-mode" value="raw" checked onclick="switchBodyMode('raw')"> raw</label>
-                    <label><input type="radio" name="body-mode" value="urlencoded" onclick="switchBodyMode('urlencoded')"> x-www-form-urlencoded</label>
+        <div id="editor-wrapper" style="flex: 1; display: flex; flex-direction: column; min-height: 100px;">
+            <div id="request-header">
+                <div class="toolbar">
+                    <button class="btn-primary" onclick="saveCurrentRequest()">Save Changes</button>
+                    <button class="btn-secondary" onclick="showCodeModal()">Code Snippet</button>
                 </div>
-                <div id="body-raw-container" style="flex: 1; display: flex; flex-direction: column;">
-                    <textarea id="req-body-input" spellcheck="false"></textarea>
+                <div class="url-bar-container">
+                    <div id="req-method-display">GET</div>
+                    <input type="text" id="req-url-input" spellcheck="false" placeholder="Enter request URL">
+                    <button id="send-btn" onclick="sendRequest()">Send</button>
                 </div>
-                <div id="body-urlencoded-container" style="flex: 1; display: none; flex-direction: column; overflow-y: auto;">
-                    <div style="margin-bottom: 10px;">
-                        <button class="sidebar-action-btn" onclick="addUrlencodedRow()">+ Add Field</button>
+            </div>
+
+            <div class="tabs-container">
+                <div class="tab active" onclick="switchTab('body')">Body</div>
+                <div class="tab" onclick="switchTab('headers')">Headers</div>
+                <div class="tab" onclick="switchTab('mocks')">Mocks</div>
+                <div class="tab" onclick="switchTab('scripts')">Pre-request</div>
+                <div class="tab" onclick="switchTab('tests')">Post-request</div>
+            </div>
+
+            <div id="editor-container">
+                <div id="pane-body" class="pane active">
+                    <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
+                        <div style="display: flex; gap: 16px;">
+                            <label style="cursor:pointer"><input type="radio" name="body-mode" value="raw" checked onclick="switchBodyMode('raw')"> raw</label>
+                            <label style="cursor:pointer"><input type="radio" name="body-mode" value="urlencoded" onclick="switchBodyMode('urlencoded')"> x-www-form-urlencoded</label>
+                        </div>
+                        <button class="sidebar-action-btn" title="Beautify JSON" onclick="beautifyRequestJson()">Beautify JSON</button>
                     </div>
-                    <div id="req-urlencoded-list"></div>
+                    <div id="body-raw-container" class="code-editor-container">
+                        <pre id="req-body-highlight" class="code-editor-pre"></pre>
+                        <textarea id="req-body-input" class="code-editor-textarea" spellcheck="false" 
+                                  oninput="updateRequestHighlight()" onscroll="syncEditorScroll()"></textarea>
+                    </div>
+                    <div id="body-urlencoded-container" style="flex: 1; display: none; flex-direction: column; overflow-y: auto;">
+                        <div style="margin-bottom: 12px;"><button class="sidebar-action-btn" onclick="addUrlencodedRow()">+ Add Field</button></div>
+                        <div id="req-urlencoded-list"></div>
+                    </div>
                 </div>
-            </div>
-            <div id="pane-headers" class="pane">
-                <div style="margin-bottom: 15px;">
-                    <button class="sidebar-action-btn" onclick="addHeaderRow()">+ Add Header</button>
+                <div id="pane-headers" class="pane">
+                    <div style="margin-bottom: 16px;"><button class="sidebar-action-btn" onclick="addHeaderRow()">+ Add Header</button></div>
+                    <div id="req-headers-list"></div>
                 </div>
-                <div id="req-headers-list"></div>
-            </div>
-            <div id="pane-mocks" class="pane">
-                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
-                    Mock URL: <code id="mock-url-display" style="background: #333; padding: 2px 5px; border-radius: 3px;">/mock/...</code>
+                <div id="pane-mocks" class="pane">
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">Mock URL: <code id="mock-url-display" style="background: var(--bg-item-active); padding: 4px 8px; border-radius: 4px; color: var(--accent);">/mock/...</code></div>
+                    <div id="mocks-list" style="overflow-y: auto; flex: 1;"></div>
                 </div>
-                <div id="mocks-list" style="overflow-y: auto; flex: 1;">
-                    <!-- Mocks here -->
-                </div>
-            </div>
-            <div id="pane-scripts" class="pane">
-                <textarea id="req-prerequest-input" spellcheck="false" placeholder="// Pre-request Script (JavaScript)"></textarea>
-            </div>
-            <div id="pane-tests" class="pane">
-                <textarea id="req-tests-input" spellcheck="false" placeholder="// Post-request Script (JavaScript)"></textarea>
+                <div id="pane-scripts" class="pane"><textarea id="req-prerequest-input" spellcheck="false" placeholder="// Pre-request Script"></textarea></div>
+                <div id="pane-tests" class="pane"><textarea id="req-tests-input" spellcheck="false" placeholder="// Post-request Script"></textarea></div>
             </div>
         </div>
+
+        <div class="resizer-v" id="resizer-response"></div>
 
         <div id="response-container">
             <div id="response-header">
-                <div class="tabs" style="border-bottom: none; padding: 0;">
-                    <div class="tab active" style="padding: 5px 10px; font-size: 11px;" onclick="switchResponseTab('body')">Body</div>
-                    <div class="tab" style="padding: 5px 10px; font-size: 11px;" onclick="switchResponseTab('headers')">Headers</div>
-                    <div class="tab" style="padding: 5px 10px; font-size: 11px;" onclick="switchResponseTab('preview')">Preview</div>
-                    <div class="tab" style="padding: 5px 10px; font-size: 11px;" onclick="switchResponseTab('diff')">Diff</div>
+                <div class="tabs-container" style="border-bottom: none; padding: 0; gap: 16px;">
+                    <div class="tab active" style="padding: 10px 0; font-size: 11px;" onclick="switchResponseTab('body')">BODY</div>
+                    <div class="tab" style="padding: 10px 0; font-size: 11px;" onclick="switchResponseTab('headers')">HEADERS</div>
+                    <div class="tab" style="padding: 10px 0; font-size: 11px;" onclick="switchResponseTab('preview')">PREVIEW</div>
+                    <div class="tab" style="padding: 10px 0; font-size: 11px;" onclick="switchResponseTab('jwt')">JWT</div>
+                    <div class="tab" style="padding: 10px 0; font-size: 11px;" onclick="switchResponseTab('diff')">DIFF</div>
                 </div>
                 <div id="response-meta"></div>
             </div>
             <div id="resp-pane-body" class="pane active">
-                <div style="padding: 5px 15px; border-bottom: 1px solid #222; display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 10px; color: #666; font-weight: bold;">FILTER</span>
-                    <input type="text" id="json-filter" placeholder="e.g. data.users[0].name" 
-                           style="flex: 1; background: transparent; border: none; color: #4ec9b0; font-family: monospace; font-size: 11px; outline: none;"
-                           oninput="applyJsonFilter(this.value)">
+                <div class="filter-bar">
+                    <span>FILTER</span>
+                    <input type="text" id="json-filter" placeholder="e.g. data.id" oninput="applyJsonFilter(this.value)">
+                    <button class="sidebar-action-btn" style="padding: 2px 8px;" onclick="beautifyResponseJson()">Beautify</button>
                 </div>
-                <pre id="response-body">// Select a request and hit Send</pre>
+                <pre id="response-body">// Ready</pre>
             </div>
-            <div id="resp-pane-headers" class="pane" style="padding: 15px; overflow: auto; font-family: monospace; font-size: 12px; color: #a6a6a6;">
-                <!-- Response headers here -->
-            </div>
+            <div id="resp-pane-headers" class="pane" style="padding: 16px; overflow: auto; font-family: monospace; font-size: 12px; color: var(--text-secondary);"></div>
             <div id="resp-pane-preview" class="pane" style="padding: 0; background: white;">
                 <iframe id="response-preview-frame" style="width: 100%; height: 100%; border: none;"></iframe>
-                <div id="response-preview-img-container" style="display: none; justify-content: center; align-items: center; height: 100%; overflow: auto;">
-                    <img id="response-preview-img" style="max-width: 100%; max-height: 100%;">
+                <div id="response-preview-img-container" style="display: none; justify-content: center; align-items: center; height: 100%; overflow: auto;"><img id="response-preview-img" style="max-width: 100%; max-height: 100%;"></div>
+            </div>
+            <div id="resp-pane-jwt" class="pane" style="padding: 24px; overflow: auto;">
+                <div id="jwt-container">
+                    <div style="color: var(--text-secondary); font-style: italic; font-size: 12px;">No JWT detected in response.</div>
                 </div>
             </div>
             <div id="resp-pane-diff" class="pane" style="padding: 0; display: none; flex-direction: row;">
-                <div style="flex: 1; border-right: 1px solid #222; display: flex; flex-direction: column;">
-                    <div style="padding: 5px 10px; font-size: 9px; color: #666; font-weight: bold; background: #111;">BASELINE</div>
-                    <pre id="diff-baseline" style="flex: 1; margin: 0; padding: 10px; font-size: 11px; overflow: auto; color: #888;"></pre>
-                </div>
-                <div style="flex: 1; display: flex; flex-direction: column;">
-                    <div style="padding: 5px 10px; font-size: 9px; color: #666; font-weight: bold; background: #111;">CURRENT</div>
-                    <pre id="diff-current" style="flex: 1; margin: 0; padding: 10px; font-size: 11px; overflow: auto; color: #4ec9b0;"></pre>
-                </div>
+                <div class="diff-pane"><div class="diff-header">BASELINE</div><pre id="diff-baseline" class="diff-content" style="color: #888;"></pre></div>
+                <div class="diff-pane"><div class="diff-header">CURRENT</div><pre id="diff-current" class="diff-content" style="color: #4ade80;"></pre></div>
             </div>
         </div>
     </div>
 
-    <!-- Modals (New, Duplicate, Edit, Variables) -->
-    <div id="new-modal" class="modal-overlay">
-        <div class="modal">
-            <h3 class="modal-title">New Request</h3>
-            <div class="form-group">
-                <label>Path (e.g. Folder > Name)</label>
-                <input type="text" id="new-path" placeholder="My Folder > My Request">
-            </div>
-            <div class="form-group">
-                <label>Method</label>
-                <select id="new-method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select>
-            </div>
-            <div class="form-group"><label>URL</label><input type="text" id="new-url" value="https://"></div>
-            <div class="modal-actions"><button class="btn-cancel" onclick="closeModal('new-modal')">Cancel</button><button class="btn-save" onclick="saveNewRequest()">Save</button></div>
-        </div>
-    </div>
-    <div id="duplicate-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Duplicate Request</h3><div class="form-group"><label>New Path</label><input type="text" id="duplicate-path"></div><div class="modal-actions"><button class="btn-cancel" onclick="closeModal('duplicate-modal')">Cancel</button><button class="btn-save" onclick="saveDuplicateRequest()">Duplicate</button></div></div></div>
-    <div id="edit-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Edit/Move Request</h3><div class="form-group"><label>Path</label><input type="text" id="edit-path"></div><div class="form-group"><label>Method</label><select id="edit-method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select></div><div class="form-group"><label>URL</label><input type="text" id="edit-url"></div><div class="modal-actions"><button class="btn-cancel" onclick="closeModal('edit-modal')">Cancel</button><button class="btn-save" onclick="saveEditRequest()">Update</button></div></div></div>
-    <div id="variables-modal" class="modal-overlay"><div class="modal" style="width: 500px;"><h3 class="modal-title">Global Variables</h3><div id="variables-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;"></div><button class="sidebar-action-btn" onclick="addVariableRow()">+ Add Variable</button><div class="modal-actions"><button class="btn-cancel" onclick="closeModal('variables-modal')">Cancel</button><button class="btn-save" onclick="saveVariables()">Save Variables</button></div></div></div>
-
-    <!-- Code Snippet Modal -->
-    <div id="code-modal" class="modal-overlay">
-        <div class="modal" style="width: 600px;">
-            <h3 class="modal-title">Code Snippet</h3>
-            <div class="form-group">
-                <label>Language</label>
-                <select id="snippet-lang" onchange="generateSnippet(this.value)">
-                    <option value="javascript">JavaScript (Fetch)</option>
-                    <option value="go">Go (net/http)</option>
-                    <option value="python">Python (requests)</option>
-                </select>
-            </div>
-            <textarea id="snippet-output" style="height: 300px; font-size: 12px;" readonly></textarea>
-            <div class="modal-actions">
-                <button class="btn-cancel" onclick="closeModal('code-modal')">Close</button>
-                <button class="btn-save" onclick="copySnippet()">Copy to Clipboard</button>
-            </div>
-        </div>
-    </div>
+    <!-- Modals -->
+    <div id="new-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">New Request</h3><div class="form-group"><label>Path</label><input type="text" id="new-path" placeholder="Folder > Request"></div><div class="form-group"><label>Method</label><select id="new-method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select></div><div class="form-group"><label>URL</label><input type="text" id="new-url" value="https://"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('new-modal')">Cancel</button><button class="btn-primary" onclick="saveNewRequest()">Create</button></div></div></div>
+    <div id="duplicate-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Duplicate</h3><div class="form-group"><label>New Path</label><input type="text" id="duplicate-path"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('duplicate-modal')">Cancel</button><button class="btn-primary" onclick="saveDuplicateRequest()">Duplicate</button></div></div></div>
+    <div id="edit-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Edit Request</h3><div class="form-group"><label>Path</label><input type="text" id="edit-path"></div><div class="form-group"><label>Method</label><select id="edit-method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select></div><div class="form-group"><label>URL</label><input type="text" id="edit-url"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('edit-modal')">Cancel</button><button class="btn-primary" onclick="saveEditRequest()">Update</button></div></div></div>
+    <div id="variables-modal" class="modal-overlay"><div class="modal" style="width: 520px;"><h3 class="modal-title">Variables</h3><div id="variables-list" style="max-height: 320px; overflow-y: auto; margin-bottom: 16px;"></div><button class="sidebar-action-btn" onclick="addVariableRow()">+ Add Variable</button><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('variables-modal')">Cancel</button><button class="btn-primary" onclick="saveVariables()">Save</button></div></div></div>
+    <div id="code-modal" class="modal-overlay"><div class="modal" style="width: 640px;"><h3 class="modal-title">Snippet</h3><div class="form-group"><label>Language</label><select id="snippet-lang" onchange="generateSnippet(this.value)"><option value="javascript">JavaScript</option><option value="go">Go</option><option value="python">Python</option></select></div><textarea id="snippet-output" style="height: 320px; font-size: 12px; background: #000;" readonly></textarea><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('code-modal')">Close</button><button class="btn-primary" onclick="copySnippet()">Copy</button></div></div></div>
 
     <div id="context-menu">
         <div class="context-menu-item" onclick="moveSelected('up')">Move Up</div>
         <div class="context-menu-item" onclick="moveSelected('down')">Move Down</div>
-        <div class="context-menu-item" onclick="showEditModal()">Move/Rename...</div>
+        <div class="context-menu-item" onclick="showNewModalFromContext()">New Request...</div>
+        <div class="context-menu-item" onclick="showEditModal()">Rename / Move...</div>
         <div class="context-menu-item" onclick="showDuplicateModal()">Duplicate</div>
+        <div style="height: 1px; background: var(--border-color); margin: 4px 0;"></div>
+        <div class="context-menu-item danger" onclick="deleteCurrentItem()">Delete</div>
     </div>
 
     <script>
@@ -525,109 +358,109 @@
         let menuTarget = null;
         let activeSidebar = 'collections';
 
-        function showCodeModal() {
-            if (!currentRequest) return alert("Select a request first");
-            document.getElementById('code-modal').classList.add('show');
-            generateSnippet(document.getElementById('snippet-lang').value);
+        function syntaxHighlight(json) {
+            if (!json) return "";
+            let str = typeof json != 'string' ? JSON.stringify(json, undefined, 4) : json;
+            str = str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return str.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                var cls = 'json-number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) cls = 'json-key';
+                    else cls = 'json-string';
+                } else if (/true|false/.test(match)) cls = 'json-boolean';
+                else if (/null/.test(match)) cls = 'json-null';
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
         }
 
-        function generateSnippet(lang) {
-            const req = currentRequest.request;
-            const method = req.method;
-            const url = req.url.raw;
-            const headers = req.header || [];
-            const body = req.body ? (req.body.raw || '') : '';
-            
-            let code = "";
-            if (lang === 'javascript') {
-                code = `fetch("${url}", {\n  method: "${method}",\n  headers: {\n${headers.map(h => `    "${h.key}": "${h.value}"`).join(',\n')}\n  }${body ? `,\n  body: JSON.stringify(${body})` : ''}\n})\n.then(res => res.json())\n.then(console.log);`;
-            } else if (lang === 'go') {
-                code = `package main\n\nimport (\n  "net/http"\n  "io/ioutil"\n  "strings"\n)\n\nfunc main() {\n  url := "${url}"\n  method := "${method}"\n  payload := strings.NewReader(\`${body}\`)\n\n  client := &http.Client{}\n  req, _ := http.NewRequest(method, url, payload)\n\n${headers.map(h => `  req.Header.Add("${h.key}", "${h.value}")`).join('\n')}\n\n  res, _ := client.Do(req)\n  defer res.Body.Close()\n  body, _ := ioutil.ReadAll(res.Body)\n  println(string(body))\n}`;
-            } else if (lang === 'python') {
-                code = `import requests\n\nurl = "${url}"\nheaders = {\n${headers.map(h => `    "${h.key}": "${h.value}"`).join(',\n')}\n}\n${body ? `payload = ${body}\nresponse = requests.request("${method}", url, json=payload, headers=headers)` : `response = requests.request("${method}", url, headers=headers)`}\n\nprint(response.text)`;
+        function updateRequestHighlight() {
+            const textarea = document.getElementById('req-body-input');
+            const highlight = document.getElementById('req-body-highlight');
+            const val = textarea.value;
+            try {
+                if (val.trim().startsWith('{') || val.trim().startsWith('[')) { highlight.innerHTML = syntaxHighlight(val) + "\n"; } 
+                else { highlight.textContent = val + "\n"; }
+            } catch (e) { highlight.textContent = val + "\n"; }
+        }
+
+        function syncEditorScroll() {
+            const textarea = document.getElementById('req-body-input');
+            const highlight = document.getElementById('req-body-highlight');
+            highlight.scrollTop = textarea.scrollTop;
+            highlight.scrollLeft = textarea.scrollLeft;
+        }
+
+        document.getElementById('req-body-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = this.selectionStart; const end = this.selectionEnd;
+                this.value = this.value.substring(0, start) + "    " + this.value.substring(end);
+                this.selectionStart = this.selectionEnd = start + 4;
+                updateRequestHighlight();
             }
-            document.getElementById('snippet-output').value = code;
+        });
+
+        function decodeJWT(token) {
+            try {
+                const parts = token.split('.');
+                if (parts.length !== 3) return null;
+                const header = JSON.parse(atob(parts[0].replace(/-/g, '+').replace(/_/g, '/')));
+                const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+                return { header, payload };
+            } catch (e) { return null; }
         }
 
-        function copySnippet() {
-            const el = document.getElementById('snippet-output');
-            el.select();
-            document.execCommand('copy');
-            alert("Copied to clipboard!");
+        function renderJWT(body, headers) {
+            const container = document.getElementById('jwt-container');
+            container.innerHTML = '';
+            let tokens = [];
+            // Scan body
+            const jwtRegex = /[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+/g;
+            const bodyMatches = body.match(jwtRegex) || [];
+            tokens = [...new Set(bodyMatches)];
+            // Scan headers
+            Object.values(headers).forEach(val => {
+                const hMatches = val.join(' ').match(jwtRegex) || [];
+                tokens = [...new Set([...tokens, ...hMatches])];
+            });
+
+            const validTokens = tokens.map(t => ({ raw: t, decoded: decodeJWT(t) })).filter(t => t.decoded !== null);
+
+            if (validTokens.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-secondary); font-style: italic; font-size: 12px;">No valid JWT found in response.</div>';
+                return;
+            }
+
+            validTokens.forEach((token, index) => {
+                const div = document.createElement('div');
+                div.innerHTML = `
+                    <div style="margin-bottom: 32px;">
+                        <div style="font-size: 11px; color: var(--accent); font-weight: 800; margin-bottom: 12px;">TOKEN #${index + 1}</div>
+                        <div class="jwt-section">
+                            <div class="jwt-label">Header</div>
+                            <pre class="jwt-box">${syntaxHighlight(token.decoded.header)}</pre>
+                        </div>
+                        <div class="jwt-section">
+                            <div class="jwt-label">Payload</div>
+                            <pre class="jwt-box">${syntaxHighlight(token.decoded.payload)}</pre>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
         }
 
-        function filterSidebar(query) {
-            query = query.toLowerCase();
-            const treeItems = document.querySelectorAll('#collection-tree .request-item');
-            const historyItems = document.querySelectorAll('#history-list .request-item');
-            const filter = (items) => {
-                items.forEach(item => {
-                    const path = item.dataset.path.toLowerCase();
-                    const isMatch = path.includes(query);
-                    item.style.display = isMatch ? 'flex' : 'none';
-                    if (isMatch && query !== '') {
-                        let p = item.parentElement;
-                        while (p && p.id !== 'collection-tree') {
-                            if (p.classList.contains('folder-content')) {
-                                p.classList.add('show');
-                                if (p.previousElementSibling) p.previousElementSibling.classList.add('expanded');
-                            }
-                            p = p.parentElement;
-                        }
-                    }
-                });
-            };
-            filter(treeItems); filter(historyItems);
+        function beautifyRequestJson() {
+            const el = document.getElementById('req-body-input');
+            try { const obj = JSON.parse(el.value); el.value = JSON.stringify(obj, null, 4); updateRequestHighlight(); } catch (e) { alert("Invalid JSON"); }
         }
 
-        function applyJsonFilter(filter) {
+        function beautifyResponseJson() {
             if (!currentRequest) return;
             const cached = responseCache[currentRequest.path];
             if (!cached || !cached.body) return;
-
-            const respBodyElem = document.getElementById('response-body');
-            if (!filter.trim()) {
-                respBodyElem.textContent = cached.body;
-                return;
-            }
-
-            try {
-                const jsonObj = JSON.parse(cached.body);
-                const result = filter.split('.').reduce((obj, key) => {
-                    if (key.includes('[') && key.includes(']')) {
-                        const baseKey = key.split('[')[0];
-                        const index = parseInt(key.match(/\[(\d+)\]/)[1]);
-                        return (baseKey ? obj[baseKey] : obj)[index];
-                    }
-                    return obj[key];
-                }, jsonObj);
-                respBodyElem.textContent = JSON.stringify(result, null, 2);
-            } catch (e) {
-                respBodyElem.textContent = cached.body;
-            }
-        }
-
-        function setBaseline() {
-            if (!currentRequest) return;
-            const cached = responseCache[currentRequest.path];
-            if (!cached) return alert("Run a request first");
-            baselineCache[currentRequest.path] = { ...cached };
-            alert("Baseline set for this request!");
-        }
-
-        function renderDiff() {
-            if (!currentRequest) return;
-            const current = responseCache[currentRequest.path];
-            const baseline = baselineCache[currentRequest.path];
-            const basePre = document.getElementById('diff-baseline');
-            const currPre = document.getElementById('diff-current');
-            if (!baseline) {
-                basePre.textContent = "// No baseline set.\n// Click 'Set as Baseline' after a successful request.";
-                currPre.textContent = current ? current.body : "";
-                return;
-            }
-            basePre.textContent = baseline.body;
-            currPre.textContent = current ? current.body : "";
+            const el = document.getElementById('response-body');
+            try { const obj = JSON.parse(el.textContent); el.innerHTML = syntaxHighlight(obj); } catch (e) { alert("Invalid JSON"); }
         }
 
         async function init() {
@@ -638,7 +471,6 @@
                 const treeContainer = document.getElementById('collection-tree');
                 treeContainer.innerHTML = '';
                 if (data.collection && data.collection.item) renderTree(treeContainer, data.collection.item, "");
-
                 const visited = new Set();
                 const mark = (items, prefix) => {
                     if (!items) return;
@@ -653,6 +485,7 @@
                 if (custom.length > 0) {
                     const folder = document.createElement('div');
                     folder.className = 'folder'; folder.textContent = 'Custom Requests';
+                    folder.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); showContextMenu(e.pageX, e.pageY, 'Custom Requests'); };
                     const content = document.createElement('div');
                     content.className = 'folder-content';
                     folder.onclick = () => { folder.classList.toggle('expanded'); content.classList.toggle('show'); };
@@ -667,61 +500,80 @@
             document.getElementById('tab-collections').classList.toggle('active', tab === 'collections');
             document.getElementById('tab-history').classList.toggle('active', tab === 'history');
             document.getElementById('collection-tree').style.display = tab === 'collections' ? 'block' : 'none';
-            document.getElementById('collection-actions').style.display = tab === 'collections' ? 'flex' : 'none';
-            document.getElementById('history-actions').style.display = tab === 'history' ? 'flex' : 'none';
             document.getElementById('sidebar-title').textContent = tab.toUpperCase();
             document.getElementById('history-list').style.display = tab === 'history' ? 'block' : 'none';
+            document.getElementById('history-actions').style.display = tab === 'history' ? 'block' : 'none';
             if (tab === 'history') renderHistory();
         }
 
         async function renderHistory() {
             const list = document.getElementById('history-list');
-            list.innerHTML = '<div style="padding: 20px; color: #666; font-size: 12px;">Loading...</div>';
+            list.innerHTML = '<div style="padding: 24px; color: var(--text-secondary); text-align: center;">Loading history...</div>';
             try {
                 const resp = await fetch('/api/history');
                 const history = await resp.json();
-                list.innerHTML = history.length === 0 ? '<div style="padding: 20px; color: #666; font-size: 12px; font-style: italic;">No history yet.</div>' : '';
+                list.innerHTML = history.length === 0 ? '<div style="padding: 24px; color: var(--text-secondary); font-style: italic; text-align: center;">No history.</div>' : '';
                 history.reverse().forEach(item => {
                     const div = document.createElement('div');
-                    div.className = 'request-item';
-                    div.dataset.path = item.path;
-                    div.style = 'flex-direction: column; align-items: flex-start; height: auto; padding: 10px 15px; border-bottom: 1px solid #222; position: relative;';
-                    let statusColor = item.statusCode >= 400 ? '#eb2013' : (item.statusCode >= 300 ? '#ffb400' : '#0cbb52');
+                    div.className = 'request-item history-item';
+                    let color = item.statusCode >= 400 || item.statusCode === 0 ? 'var(--method-delete)' : (item.statusCode >= 300 ? 'var(--method-post)' : 'var(--method-get)');
                     div.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; width: 100%; margin-bottom: 5px;">
-                            <span class="method-tag method-${item.method}" style="width: auto; margin-right: 10px;">${item.method}</span>
-                            <span style="color: ${statusColor}; font-weight: bold; font-size: 10px;">${item.statusCode}</span>
-                        </div>
-                        <div style="font-size: 11px; font-weight: 600; color: #eee; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 90%;">${item.path}</div>
-                        <div style="font-size: 9px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 90%;">${item.url}</div>
-                        <div style="font-size: 9px; color: #444; margin-top: 5px;">${new Date(item.timestamp).toLocaleTimeString()} • ${item.duration}ms</div>
-                        <button class="btn-remove-header" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%);" onclick="event.stopPropagation(); deleteHistoryItem('${item.timestamp}')">✕</button>
+                        <div class="history-meta"><span class="method-tag method-${item.method}">${item.method}</span><span style="color: ${color}; font-weight: 700;">${item.statusCode || 'ERR'}</span></div>
+                        <div class="history-path">${item.path}</div>
+                        <div class="history-url">${item.url}</div>
+                        <div class="history-footer">${new Date(item.timestamp).toLocaleTimeString()} • ${item.duration}ms</div>
+                        <button class="sidebar-action-btn" style="position: absolute; right: 12px; top: 12px; padding: 2px 6px;" onclick="event.stopPropagation(); deleteHistoryItem('${item.timestamp}')">✕</button>
                     `;
                     div.onclick = () => selectRequest(item.path);
                     list.appendChild(div);
                 });
-            } catch (e) { list.innerHTML = '<div style="color:red">Error</div>'; }
+            } catch (e) { list.innerHTML = '<div style="color:var(--method-delete); padding: 24px;">Error</div>'; }
         }
 
-        async function deleteHistoryItem(ts) {
-            await fetch('/api/history/delete', { method: 'POST', body: JSON.stringify({ timestamp: ts }) });
-            renderHistory();
-        }
+        async function deleteHistoryItem(ts) { await fetch('/api/history/delete', { method: 'POST', body: JSON.stringify({ timestamp: ts }) }); renderHistory(); }
+        async function clearHistory() { if (!confirm("Clear history?")) return; await fetch('/api/history/clear', { method: 'POST' }); renderHistory(); }
 
-        async function clearHistory() {
-            if (!confirm("Clear all history?")) return;
-            await fetch('/api/history/clear', { method: 'POST' });
-            renderHistory();
+        function filterSidebar(query) {
+            query = query.toLowerCase();
+            const filter = (items) => {
+                items.forEach(item => {
+                    const path = item.dataset.path.toLowerCase();
+                    const isMatch = path.includes(query);
+                    item.style.display = isMatch ? 'flex' : 'none';
+                    if (isMatch && query !== '') {
+                        let p = item.parentElement;
+                        while (p && p.id !== 'collection-tree') {
+                            if (p.classList.contains('folder-content')) { p.classList.add('show'); if (p.previousElementSibling) p.previousElementSibling.classList.add('expanded'); }
+                            p = p.parentElement;
+                        }
+                    }
+                });
+            };
+            filter(document.querySelectorAll('#collection-tree .request-item'));
+            filter(document.querySelectorAll('#history-list .request-item'));
         }
 
         function createRequestNode(path, method, name) {
             const div = document.createElement('div');
-            div.className = 'request-item';
-            div.dataset.path = path;
+            div.className = 'request-item'; div.dataset.path = path;
             div.innerHTML = `<span class="method-tag method-${method}">${method}</span><span>${name}</span>`;
             div.onclick = (e) => { e.stopPropagation(); selectRequest(path); };
             div.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); selectRequest(path); showContextMenu(e.pageX, e.pageY, path); };
             return div;
+        }
+
+        function renderTree(container, items, prefix) {
+            if (!items) return;
+            items.forEach(item => {
+                const path = prefix ? `${prefix} > ${item.name}` : item.name;
+                if (item.item && item.item.length > 0) {
+                    const f = document.createElement('div'); f.className = 'folder'; f.textContent = item.name;
+                    f.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); showContextMenu(e.pageX, e.pageY, path); };
+                    const c = document.createElement('div'); c.className = 'folder-content';
+                    f.onclick = (e) => { e.stopPropagation(); f.classList.toggle('expanded'); c.classList.toggle('show'); };
+                    container.appendChild(f); container.appendChild(c); renderTree(c, item.item, path);
+                } else if (item.request) { container.appendChild(createRequestNode(path, item.request.method, item.name)); }
+            });
         }
 
         function showContextMenu(x, y, path) {
@@ -731,278 +583,215 @@
             document.addEventListener('click', () => menu.style.display = 'none', { once: true });
         }
 
+        function showNewModalFromContext() { document.getElementById('new-path').value = menuTarget + " > "; showNewModal(); }
+
+        async function deleteCurrentItem() {
+            if (!confirm(`Delete "${menuTarget}"?`)) return;
+            const resp = await fetch('/api/requests/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: menuTarget }) });
+            if (resp.ok) { await init(); if (currentRequest && currentRequest.path === menuTarget) currentRequest = null; }
+        }
+
         async function moveSelected(dir) {
-            const idx = flatRequests.findIndex(r => r.path === menuTarget);
-            if (idx === -1) return;
-            let targetIdx = dir === 'up' ? idx - 1 : idx + 1;
-            if (targetIdx < 0 || targetIdx >= flatRequests.length) return;
-            const resp = await fetch('/api/requests/reorder', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path1: menuTarget, path2: flatRequests[targetIdx].path })
-            });
+            const idx = flatRequests.findIndex(r => r.path === menuTarget); if (idx === -1) return;
+            let tIdx = dir === 'up' ? idx - 1 : idx + 1;
+            if (tIdx < 0 || tIdx >= flatRequests.length) return;
+            const resp = await fetch('/api/requests/reorder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path1: menuTarget, path2: flatRequests[tIdx].path }) });
             if (resp.ok) { await init(); selectRequest(menuTarget); }
         }
 
         async function showVariablesModal() {
-            const resp = await fetch('/api/variables');
-            const vars = await resp.json();
-            const list = document.getElementById('variables-list');
-            list.innerHTML = '';
-            Object.entries(vars).forEach(([k,v]) => list.appendChild(createVariableRow(k,v)));
+            const resp = await fetch('/api/variables'); const vars = await resp.json();
+            const list = document.getElementById('variables-list'); list.innerHTML = '';
+            Object.entries(vars).forEach(([k,v]) => {
+                const div = document.createElement('div'); div.className = 'header-row';
+                div.innerHTML = `<input type="text" class="var-key" value="${k}"><input type="text" class="var-value" value="${v}"><button class="sidebar-action-btn" onclick="this.parentElement.remove()">✕</button>`;
+                list.appendChild(div);
+            });
             document.getElementById('variables-modal').classList.add('show');
         }
 
-        function createVariableRow(k='', v='') {
+        function addVariableRow() {
             const div = document.createElement('div'); div.className = 'header-row';
-            div.innerHTML = `<input type="text" class="var-key" value="${k}"><input type="text" class="var-value" value="${v}"><button class="btn-remove-header" onclick="this.parentElement.remove()">✕</button>`;
-            return div;
+            div.innerHTML = `<input type="text" class="var-key"><input type="text" class="var-value"><button class="sidebar-action-btn" onclick="this.parentElement.remove()">✕</button>`;
+            document.getElementById('variables-list').appendChild(div);
         }
-
-        function addVariableRow() { document.getElementById('variables-list').appendChild(createVariableRow()); }
 
         async function saveVariables() {
             const vars = {};
-            document.querySelectorAll('#variables-list .header-row').forEach(row => {
-                const k = row.querySelector('.var-key').value; if(k) vars[k] = row.querySelector('.var-value').value;
-            });
+            document.querySelectorAll('#variables-list .header-row').forEach(row => { const k = row.querySelector('.var-key').value; if(k) vars[k] = row.querySelector('.var-value').value; });
             const resp = await fetch('/api/variables', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(vars) });
             if (resp.ok) closeModal('variables-modal');
         }
 
-        function closeModal(id) { document.getElementById(id).classList.remove('show'); }
         function showNewModal() { document.getElementById('new-modal').classList.add('show'); }
-        function showDuplicateModal() {
-            const path = menuTarget || (currentRequest ? currentRequest.path : null);
-            if (!path) return alert("Select a request");
-            document.getElementById('duplicate-path').value = path + " Copy";
-            document.getElementById('duplicate-modal').classList.add('show');
-        }
-        function showEditModal() {
-            const path = menuTarget || (currentRequest ? currentRequest.path : null);
-            if (!path) return alert("Select a request");
-            const req = flatRequests.find(r => r.path === path);
-            document.getElementById('edit-path').value = req.path;
-            document.getElementById('edit-method').value = req.request.method;
-            document.getElementById('edit-url').value = req.request.url.raw;
-            document.getElementById('edit-modal').classList.add('show');
-        }
+        function showDuplicateModal() { document.getElementById('duplicate-path').value = menuTarget + " Copy"; document.getElementById('duplicate-modal').classList.add('show'); }
+        function showEditModal() { const req = flatRequests.find(r => r.path === menuTarget); if(!req) return; document.getElementById('edit-path').value = req.path; document.getElementById('edit-method').value = req.request.method; document.getElementById('edit-url').value = req.request.url.raw; document.getElementById('edit-modal').classList.add('show'); }
+        function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 
         async function saveEditRequest() {
-            const path = menuTarget || (currentRequest ? currentRequest.path : null);
-            const newPath = document.getElementById('edit-path').value;
-            const req = flatRequests.find(r => r.path === path);
-            const pre = (req.events || []).find(e => e.listen === 'prerequest');
-            const test = (req.events || []).find(e => e.listen === 'test');
-            const resp = await fetch('/api/requests/update', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    oldPath: path, newPath: newPath, method: document.getElementById('edit-method').value, url: document.getElementById('edit-url').value,
-                    bodyMode: (req.request.body && req.request.body.mode) || 'raw', bodyRaw: req.request.body ? (req.request.body.raw || '') : '',
-                    urlencoded: req.request.body ? (req.request.body.urlencoded || []) : [], headers: req.request.header || [],
-                    preRequestScript: pre ? pre.script.exec.join('\n') : '', testScript: test ? test.script.exec.join('\n') : ''
-                })
-            });
+            const newPath = document.getElementById('edit-path').value; const req = flatRequests.find(r => r.path === menuTarget);
+            const pre = (req.events || []).find(e => e.listen === 'prerequest'); const test = (req.events || []).find(e => e.listen === 'test');
+            const resp = await fetch('/api/requests/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ oldPath: menuTarget, newPath: newPath, method: document.getElementById('edit-method').value, url: document.getElementById('edit-url').value, bodyMode: (req.request.body && req.request.body.mode) || 'raw', bodyRaw: document.getElementById('req-body-input').value, urlencoded: req.request.body ? (req.request.body.urlencoded || []) : [], headers: req.request.header || [], preRequestScript: pre ? pre.script.exec.join('\n') : '', testScript: test ? test.script.exec.join('\n') : '' }) });
             if (resp.ok) { closeModal('edit-modal'); await init(); selectRequest(newPath); }
         }
 
         async function saveNewRequest() {
             const path = document.getElementById('new-path').value;
-            const resp = await fetch('/api/requests/new', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path, method: document.getElementById('new-method').value, url: document.getElementById('new-url').value, bodyMode: 'raw', bodyRaw: '', urlencoded: [], headers: [], preRequestScript: '', testScript: '' })
-            });
+            const resp = await fetch('/api/requests/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, method: document.getElementById('new-method').value, url: document.getElementById('new-url').value, bodyMode: 'raw', bodyRaw: '', urlencoded: [], headers: [], preRequestScript: '', testScript: '' }) });
             if (resp.ok) { closeModal('new-modal'); init(); }
         }
 
-        async function saveDuplicateRequest() {
-            const path = menuTarget || (currentRequest ? currentRequest.path : null);
-            const resp = await fetch('/api/requests/duplicate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, newPath: document.getElementById('duplicate-path').value }) });
-            if (resp.ok) { closeModal('duplicate-modal'); init(); }
-        }
+        async function saveDuplicateRequest() { const resp = await fetch('/api/requests/duplicate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: menuTarget, newPath: document.getElementById('duplicate-path').value }) }); if (resp.ok) { closeModal('duplicate-modal'); init(); } }
 
-        function renderTree(container, items, prefix) {
-            if (!items) return;
-            items.forEach(item => {
-                const path = prefix ? `${prefix} > ${item.name}` : item.name;
-                if (item.item && item.item.length > 0) {
-                    const f = document.createElement('div'); f.className = 'folder'; f.textContent = item.name;
-                    const c = document.createElement('div'); c.className = 'folder-content';
-                    f.onclick = (e) => { e.stopPropagation(); f.classList.toggle('expanded'); c.classList.toggle('show'); };
-                    container.appendChild(f); container.appendChild(c); renderTree(c, item.item, path);
-                } else if (item.request) { container.appendChild(createRequestNode(path, item.request.method, item.name)); }
-            });
-        }
-
-        function switchBodyMode(mode) {
-            document.getElementById('body-raw-container').style.display = mode === 'raw' ? 'flex' : 'none';
-            document.getElementById('body-urlencoded-container').style.display = mode === 'urlencoded' ? 'flex' : 'none';
-            document.querySelector(`input[name="body-mode"][value="${mode}"]`).checked = true;
-        }
-
-        function renderUrlencoded(data) {
-            const list = document.getElementById('req-urlencoded-list'); list.innerHTML = '';
-            (data || []).forEach(item => list.appendChild(createUrlencodedRow(item.key, item.value)));
-        }
-
-        function createUrlencodedRow(k='', v='') {
-            const div = document.createElement('div'); div.className = 'header-row';
-            div.innerHTML = `<input type="text" class="urlencoded-key" value="${k}"><input type="text" class="urlencoded-value" value="${v}"><button class="btn-remove-header" onclick="this.parentElement.remove()">✕</button>`;
-            return div;
-        }
-
-        function addUrlencodedRow() { document.getElementById('req-urlencoded-list').appendChild(createUrlencodedRow()); }
-
-        async function saveAsMock() {
-            if (!currentRequest) return;
-            const path = currentRequest.path; const cached = responseCache[path]; if (!cached) return;
-            const name = prompt("Mock Name:", "Default Mock"); if (!name) return;
-            const meta = document.getElementById('response-meta').innerText || "";
-            const match = meta.match(/Status: (\d+) (.*)/);
-            const code = match ? parseInt(match[1]) : 200;
-            const status = match ? match[2].split('\n')[0] : "OK";
-            const headerRows = document.querySelectorAll('#resp-pane-headers div');
-            const headers = Array.from(headerRows).map(row => {
-                const t = row.innerText; const i = t.indexOf(':'); return { key: t.substring(0, i).trim(), value: t.substring(i+1).trim() };
-            });
-            const resp = await fetch('/api/mock/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, name, code, status, body: cached.body, headers }) });
-            if (resp.ok) { alert("Saved!"); await init(); selectRequest(path); }
-        }
-
-        function renderMocks() {
-            const list = document.getElementById('mocks-list'); list.innerHTML = '';
-            const mocks = currentRequest.responses || [];
-            if (mocks.length === 0) list.innerHTML = '<div style="padding:10px;color:#666">No mocks.</div>';
-            mocks.forEach(m => {
-                const div = document.createElement('div'); div.style = 'border:1px solid var(--border-color);padding:10px;margin-bottom:10px;background:#222;';
-                div.innerHTML = `<div style="color:var(--postman-orange)">${m.name}</div><div style="color:#0cbb52">${m.code} ${m.status}</div><div style="font-size:10px;color:#888">${m.body.substring(0,100)}</div>`;
-                list.appendChild(div);
-            });
-            let url = currentRequest.request.url.raw;
-            if(url.includes('://')) url = url.substring(url.indexOf('://')+3);
-            if(url.includes('/')) url = url.substring(url.indexOf('/')); else url = '/';
-            document.getElementById('mock-url-display').textContent = '/mock' + url.split('?')[0];
-        }
+        function switchBodyMode(mode) { document.getElementById('body-raw-container').style.display = mode === 'raw' ? 'block' : 'none'; document.getElementById('body-urlencoded-container').style.display = mode === 'urlencoded' ? 'flex' : 'none'; document.querySelector(`input[name="body-mode"][value="${mode}"]`).checked = true; }
+        function addUrlencodedRow() { const div = document.createElement('div'); div.className = 'header-row'; div.innerHTML = `<input type="text" class="urlencoded-key"><input type="text" class="urlencoded-value"><button class="sidebar-action-btn" onclick="this.parentElement.remove()">✕</button>`; document.getElementById('req-urlencoded-list').appendChild(div); }
+        function addHeaderRow() { const div = document.createElement('div'); div.className = 'header-row'; div.innerHTML = `<input type="text" class="header-key"><input type="text" class="header-value"><button class="sidebar-action-btn" onclick="this.parentElement.remove()">✕</button>`; document.getElementById('req-headers-list').appendChild(div); }
 
         function selectRequest(path) {
             currentRequest = flatRequests.find(r => r.path === path); if (!currentRequest) return;
             document.querySelectorAll('.request-item').forEach(el => el.classList.toggle('active', el.dataset.path === path));
             document.getElementById('req-method-display').textContent = currentRequest.request.method;
-            document.getElementById('req-method-display').className = `method-${currentRequest.request.method}`;
             document.getElementById('req-url-input').value = currentRequest.request.url.raw;
             const mode = (currentRequest.request.body && currentRequest.request.body.mode) || 'raw'; switchBodyMode(mode);
             document.getElementById('req-body-input').value = currentRequest.request.body ? (currentRequest.request.body.raw || '') : '';
-            renderUrlencoded(currentRequest.request.body ? currentRequest.request.body.urlencoded : []);
-            const pre = (currentRequest.events || []).find(e => e.listen === 'prerequest');
-            const test = (currentRequest.events || []).find(e => e.listen === 'test');
+            updateRequestHighlight();
+            const urlEncList = document.getElementById('req-urlencoded-list'); urlEncList.innerHTML = '';
+            (currentRequest.request.body ? currentRequest.request.body.urlencoded || [] : []).forEach(u => {
+                const d = document.createElement('div'); d.className = 'header-row'; d.innerHTML = `<input type="text" class="urlencoded-key" value="${u.key}"><input type="text" class="urlencoded-value" value="${u.value}"><button class="sidebar-action-btn" onclick="this.parentElement.remove()">✕</button>`;
+                urlEncList.appendChild(d);
+            });
+            const headList = document.getElementById('req-headers-list'); headList.innerHTML = '';
+            (currentRequest.request.header || []).forEach(h => {
+                const d = document.createElement('div'); d.className = 'header-row'; d.innerHTML = `<input type="text" class="header-key" value="${h.key}"><input type="text" class="header-value" value="${h.value}"><button class="sidebar-action-btn" onclick="this.parentElement.remove()">✕</button>`;
+                headList.appendChild(d);
+            });
+            const pre = (currentRequest.events || []).find(e => e.listen === 'prerequest'); const test = (currentRequest.events || []).find(e => e.listen === 'test');
             document.getElementById('req-prerequest-input').value = pre ? pre.script.exec.join('\n') : '';
             document.getElementById('req-tests-input').value = test ? test.script.exec.join('\n') : '';
-            renderHeaders(currentRequest.request.header || []); renderMocks();
+            const mocksList = document.getElementById('mocks-list'); mocksList.innerHTML = currentRequest.responses && currentRequest.responses.length ? '' : '<div style="padding:16px; color:var(--text-secondary); font-style:italic; font-size:12px;">No mocks.</div>';
+            (currentRequest.responses || []).forEach(m => {
+                const d = document.createElement('div'); d.style = 'border:1px solid var(--border-color); padding:12px; margin-bottom:12px; border-radius:8px; background:var(--bg-sidebar);';
+                d.innerHTML = `<div style="font-weight:700; color:var(--accent);">${m.name}</div><div style="font-size:11px; color:var(--method-get);">${m.code} ${m.status}</div><div style="font-size:10px; color:var(--text-secondary); opacity:0.6;">${m.body.substring(0,100)}...</div>`;
+                mocksList.appendChild(d);
+            });
+            let url = currentRequest.request.url.raw; if(url.includes('://')) url = url.substring(url.indexOf('://')+3); if(url.includes('/')) url = url.substring(url.indexOf('/')); else url = '/';
+            document.getElementById('mock-url-display').textContent = '/mock' + url.split('?')[0];
             const cached = responseCache[path];
-            if (cached) {
-                document.getElementById('response-body').textContent = cached.body;
-                document.getElementById('resp-pane-headers').innerHTML = cached.headers;
+            if (cached) { 
+                const el = document.getElementById('response-body');
+                try { const obj = JSON.parse(cached.body); el.innerHTML = syntaxHighlight(obj); } catch (e) { el.textContent = cached.body; }
+                document.getElementById('resp-pane-headers').innerHTML = cached.headers; 
                 document.getElementById('response-meta').innerHTML = cached.meta;
-            } else {
-                document.getElementById('response-body').textContent = '// Ready';
-                document.getElementById('resp-pane-headers').innerHTML = '';
-                document.getElementById('response-meta').innerHTML = '';
-            }
+                renderJWT(cached.body, cached.rawHeaders || {});
+            } else { document.getElementById('response-body').textContent = '// Ready'; document.getElementById('resp-pane-headers').innerHTML = ''; document.getElementById('response-meta').textContent = ''; }
         }
-
-        function renderHeaders(headers) {
-            const div = document.getElementById('req-headers-list'); div.innerHTML = '';
-            headers.forEach(h => div.appendChild(createHeaderRow(h.key, h.value)));
-        }
-
-        function createHeaderRow(k='', v='') {
-            const div = document.createElement('div'); div.className = 'header-row';
-            div.innerHTML = `<input type="text" class="header-key" value="${k}"><input type="text" class="header-value" value="${v}"><button class="btn-remove-header" onclick="this.parentElement.remove()">✕</button>`;
-            return div;
-        }
-
-        function addHeaderRow() { document.getElementById('req-headers-list').appendChild(createHeaderRow()); }
 
         async function saveCurrentRequest() {
             if (!currentRequest) return;
-            const method = document.getElementById('req-method-display').textContent;
-            const url = document.getElementById('req-url-input').value;
-            const bodyMode = document.querySelector('input[name="body-mode"]:checked').value;
-            const bodyRaw = document.getElementById('req-body-input').value;
             const urlencoded = Array.from(document.querySelectorAll('#req-urlencoded-list .header-row')).map(row => ({ key: row.querySelector('.urlencoded-key').value, value: row.querySelector('.urlencoded-value').value })).filter(u => u.key !== '');
             const headers = Array.from(document.querySelectorAll('#req-headers-list .header-row')).map(row => ({ key: row.querySelector('.header-key').value, value: row.querySelector('.header-value').value })).filter(h => h.key !== '');
-            const resp = await fetch('/api/requests/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ oldPath: currentRequest.path, newPath: currentRequest.path, method, url, bodyMode, bodyRaw, urlencoded, headers, preRequestScript: document.getElementById('req-prerequest-input').value, testScript: document.getElementById('req-tests-input').value }) });
+            const resp = await fetch('/api/requests/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ oldPath: currentRequest.path, newPath: currentRequest.path, method: document.getElementById('req-method-display').textContent, url: document.getElementById('req-url-input').value, bodyMode: document.querySelector('input[name="body-mode"]:checked').value, bodyRaw: document.getElementById('req-body-input').value, urlencoded, headers, preRequestScript: document.getElementById('req-prerequest-input').value, testScript: document.getElementById('req-tests-input').value }) });
             if (resp.ok) { const data = await resp.json(); const idx = flatRequests.findIndex(r => r.path === currentRequest.path); if (idx !== -1) { flatRequests[idx] = data; currentRequest = data; } alert("Saved!"); }
         }
 
         function switchTab(tab) {
-            document.querySelectorAll('.tabs .tab').forEach(t => { if(t.parentElement.id !== 'response-header') t.classList.toggle('active', t.textContent.toLowerCase() === tab); });
-            document.querySelectorAll('#editor-container .pane').forEach(p => p.classList.toggle('active', p.id === `pane-${tab}`));
+            document.querySelectorAll('.tabs-container .tab').forEach(t => { if(t.parentElement.className === 'tabs-container') t.classList.toggle('active', t.textContent.toLowerCase() === tab.toLowerCase()); });
+            document.querySelectorAll('#editor-container .pane').forEach(p => p.classList.toggle('active', p.id === `pane-${tab.toLowerCase()}`));
         }
 
         function switchResponseTab(tab) {
-            document.querySelectorAll('#response-header .tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase() === tab));
-            document.getElementById('resp-pane-body').classList.toggle('active', tab === 'body');
-            document.getElementById('resp-pane-headers').classList.toggle('active', tab === 'headers');
-            document.getElementById('resp-pane-preview').classList.toggle('active', tab === 'preview');
-            document.getElementById('resp-pane-diff').classList.toggle('active', tab === 'diff');
-            document.getElementById('resp-pane-diff').style.display = tab === 'diff' ? 'flex' : 'none';
+            document.querySelectorAll('#response-header .tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase() === tab.toLowerCase()));
+            document.querySelectorAll('#response-container .pane').forEach(p => { if(p.id.startsWith('resp-pane-')) { p.classList.toggle('active', p.id === `resp-pane-${tab.toLowerCase()}`); p.style.display = p.id === `resp-pane-${tab.toLowerCase()}` ? (['diff','jwt'].includes(tab) ? 'flex' : 'block') : 'none'; } });
             if (tab === 'diff') renderDiff();
+        }
+
+        function applyJsonFilter(filter) {
+            if (!currentRequest) return; const cached = responseCache[currentRequest.path]; if (!cached || !cached.body) return;
+            const el = document.getElementById('response-body'); if (!filter.trim()) { try { el.innerHTML = syntaxHighlight(cached.body); } catch(e) { el.textContent = cached.body; } return; }
+            try {
+                const jsonObj = JSON.parse(cached.body);
+                const result = filter.split('.').reduce((obj, key) => {
+                    if (key.includes('[') && key.includes(']')) { const bK = key.split('[')[0]; const idx = parseInt(key.match(/\[(\d+)\]/)[1]); return (bK ? obj[bK] : obj)[idx]; }
+                    return obj[key];
+                }, jsonObj);
+                el.innerHTML = syntaxHighlight(result);
+            } catch (e) { el.textContent = cached.body; }
+        }
+
+        function setBaseline() { if (!currentRequest) return; const cached = responseCache[currentRequest.path]; if (!cached) return alert("Run request first"); baselineCache[currentRequest.path] = { ...cached }; alert("Baseline set!"); }
+        function renderDiff() {
+            if (!currentRequest) return; const current = responseCache[currentRequest.path]; const baseline = baselineCache[currentRequest.path];
+            const bPre = document.getElementById('diff-baseline'); const cPre = document.getElementById('diff-current');
+            if (!baseline) { bPre.textContent = "// No baseline."; cPre.textContent = current ? current.body : ""; return; }
+            bPre.textContent = baseline.body; cPre.textContent = current ? current.body : "";
         }
 
         async function sendRequest() {
             if (!currentRequest) return;
-            const respBody = document.getElementById('response-body'); 
-            const respHeaders = document.getElementById('resp-pane-headers'); 
-            const meta = document.getElementById('response-meta');
-            const previewFrame = document.getElementById('response-preview-frame');
-            const previewImg = document.getElementById('response-preview-img');
-            const previewImgContainer = document.getElementById('response-preview-img-container');
-
-            respBody.textContent = '// Sending...'; 
-            previewFrame.style.display = 'none';
-            previewImgContainer.style.display = 'none';
-            
+            const rBody = document.getElementById('response-body'); const rHeaders = document.getElementById('resp-pane-headers'); const meta = document.getElementById('response-meta');
+            const pFrame = document.getElementById('response-preview-frame'); const pImg = document.getElementById('response-preview-img'); const pImgC = document.getElementById('response-preview-img-container');
+            rBody.textContent = '// Sending...'; pFrame.style.display = 'none'; pImgC.style.display = 'none';
             const start = Date.now();
             try {
-                const resp = await fetch('/api/send', { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify({ 
-                        path: currentRequest.path, 
-                        bodyMode: document.querySelector('input[name="body-mode"]:checked').value, 
-                        bodyRaw: document.getElementById('req-body-input').value, 
-                        urlencoded: Array.from(document.querySelectorAll('#req-urlencoded-list .header-row')).map(row => ({ key: row.querySelector('.urlencoded-key').value, value: row.querySelector('.urlencoded-value').value })).filter(u => u.key !== '') 
-                    }) 
-                });
-                const data = await resp.json(); 
-                const duration = Date.now() - start;
-                
-                let color = (data.statusCode >= 400 || data.statusCode === 0) ? '#eb2013' : (data.statusCode >= 300 ? '#ffb400' : '#0cbb52');
+                const resp = await fetch('/api/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: currentRequest.path, bodyMode: document.querySelector('input[name="body-mode"]:checked').value, bodyRaw: document.getElementById('req-body-input').value, urlencoded: Array.from(document.querySelectorAll('#req-urlencoded-list .header-row')).map(row => ({ key: row.querySelector('.urlencoded-key').value, value: row.querySelector('.urlencoded-value').value })).filter(u => u.key !== '') }) });
+                const data = await resp.json(); const duration = Date.now() - start;
+                let color = (data.statusCode >= 400 || data.statusCode === 0) ? 'var(--method-delete)' : (data.statusCode >= 300 ? 'var(--method-post)' : 'var(--method-get)');
                 let displayStatus = data.statusCode === 0 ? data.statusText : data.statusText.split(' ').slice(1).join(' ');
-                let metaHtml = `Status: <span style="color:${color};font-weight:bold">${data.statusCode} ${displayStatus}</span> • Time: ${duration}ms`;
-                let body = data.body || '';
-                
-                const headers = data.headers || {};
-                const ct = (headers['Content-Type'] || headers['content-type'] || [])[0] || '';
-                if (ct.includes('json') && body) { try { body = JSON.stringify(JSON.parse(body), null, 2); } catch {} }
-
-                if (ct.includes('text/html')) {
-                    previewFrame.style.display = 'block'; previewFrame.srcdoc = body;
-                } else if (ct.includes('image/')) {
-                    previewImgContainer.style.display = 'flex'; previewImg.src = `data:${ct};base64,${body}`;
-                } else {
-                    previewFrame.style.display = 'block'; previewFrame.srcdoc = `<div style="padding:20px; font-family:sans-serif; color:#666;">Preview not available for ${ct}</div>`;
-                }
-
-                respHeaders.innerHTML = Object.entries(headers).map(([k, v]) => `<div><span style="color:var(--postman-orange)">${k}:</span> ${v.join(', ')}</div>`).join('');
-                responseCache[currentRequest.path] = { body, headers: respHeaders.innerHTML, meta: metaHtml };
-                meta.innerHTML = `<div style="display:flex;gap:15px;align-items:center"><span>${metaHtml}</span><button class="sidebar-action-btn" onclick="setBaseline()">Set as Baseline</button><button class="sidebar-action-btn" onclick="saveAsMock()">Save as Mock</button></div>`;
-                respBody.textContent = body;
+                let mHtml = `<span style="color:${color};font-weight:700">${data.statusCode} ${displayStatus}</span> &bull; ${duration}ms`;
+                let body = data.body || ''; const h = data.headers || {}; const ct = (h['Content-Type'] || h['content-type'] || [])[0] || '';
+                let isJson = false;
+                if (ct.includes('json') && body) { try { const obj = JSON.parse(body); body = JSON.stringify(obj, null, 2); isJson = true; } catch {} }
+                if (ct.includes('text/html')) { pFrame.style.display = 'block'; pFrame.srcdoc = body; }
+                else if (ct.includes('image/')) { pImgC.style.display = 'flex'; pImg.src = `data:${ct};base64,${body}`; }
+                else { pFrame.style.display = 'block'; pFrame.srcdoc = `<div style="padding:24px; color:#666;">Preview not supported</div>`; }
+                rHeaders.innerHTML = Object.entries(h).map(([k, v]) => `<div><span style="color:var(--accent); font-weight:600;">${k}:</span> ${v.join(', ')}</div>`).join('');
+                responseCache[currentRequest.path] = { body, headers: rHeaders.innerHTML, meta: mHtml, rawHeaders: h };
+                meta.innerHTML = `<div style="display:flex;gap:12px;align-items:center"><span>${mHtml}</span><button class="sidebar-action-btn" onclick="setBaseline()">Baseline</button><button class="sidebar-action-btn" onclick="saveAsMock()">Mock</button></div>`;
+                if (isJson) { rBody.innerHTML = syntaxHighlight(body); } else { rBody.textContent = body; }
+                renderJWT(body, h);
                 if (activeSidebar === 'history') renderHistory();
-            } catch (e) { respBody.textContent = '// Error: ' + e.message; }
+            } catch (e) { rBody.textContent = '// Error: ' + e.message; }
+        }
+
+        function showCodeModal() { if (!currentRequest) return alert("Select request"); document.getElementById('code-modal').classList.add('show'); generateSnippet(document.getElementById('snippet-lang').value); }
+        function generateSnippet(lang) {
+            const req = currentRequest.request; const body = req.body ? (req.body.raw || '') : '';
+            let code = "";
+            if (lang === 'javascript') code = `fetch("${req.url.raw}", {\n  method: "${req.method}",\n  headers: ${JSON.stringify(req.header || {}, null, 2)}${body ? `,\n  body: JSON.stringify(${body})` : ''}\n}).then(r => r.json()).then(console.log);`;
+            else if (lang === 'go') code = `package main\nimport ("net/http"; "io/ioutil"; "strings")\nfunc main() {\n  url := "${req.url.raw}"\n  payload := strings.NewReader(\`${body}\`)\n  req, _ := http.NewRequest("${req.method}", url, payload)\n  res, _ := http.DefaultClient.Do(req)\n  defer res.Body.Close()\n  b, _ := ioutil.ReadAll(res.Body)\n  println(string(b))\n}`;
+            else if (lang === 'python') code = `import requests\nurl = "${req.url.raw}"\nres = requests.request("${req.method}", url, headers=${JSON.stringify(req.header || {})}, data="${body}")\nprint(res.text)`;
+            document.getElementById('snippet-output').value = code;
+        }
+        function copySnippet() { const el = document.getElementById('snippet-output'); el.select(); document.execCommand('copy'); alert("Copied!"); }
+        async function saveAsMock() {
+            if (!currentRequest) return; const cached = responseCache[currentRequest.path]; if (!cached) return;
+            const name = prompt("Mock Name:", "Default Mock"); if (!name) return;
+            const meta = document.getElementById('response-meta').innerText || ""; const match = meta.match(/(\d+) (.*)/);
+            const code = match ? parseInt(match[1]) : 200; const status = match ? match[2].split('\n')[0].split(' •')[0] : "OK";
+            const hRows = document.querySelectorAll('#resp-pane-headers div');
+            const h = Array.from(hRows).map(r => { const t = r.innerText; const i = t.indexOf(':'); return { key: t.substring(0, i).trim(), value: t.substring(i+1).trim() }; });
+            const resp = await fetch('/api/mock/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: currentRequest.path, name, code, status, body: cached.body, headers: h }) });
+            if (resp.ok) { alert("Mock saved!"); await init(); selectRequest(currentRequest.path); }
         }
 
         init();
+
+        const sidebarResizer = document.getElementById('resizer-sidebar');
+        const responseResizer = document.getElementById('resizer-response');
+        const sidebar = document.getElementById('sidebar');
+        const responseContainer = document.getElementById('response-container');
+        const savedSidebarWidth = localStorage.getItem('sidebarWidth');
+        if (savedSidebarWidth) sidebar.style.width = savedSidebarWidth + 'px';
+        const savedResponseHeight = localStorage.getItem('responseHeight');
+        if (savedResponseHeight) responseContainer.style.height = savedResponseHeight + 'px';
+        let isResizingSidebar = false; let isResizingResponse = false;
+        sidebarResizer.addEventListener('mousedown', (e) => { isResizingSidebar = true; sidebarResizer.classList.add('active'); document.body.style.cursor = 'col-resize'; });
+        responseResizer.addEventListener('mousedown', (e) => { isResizingResponse = true; responseResizer.classList.add('active'); document.body.style.cursor = 'row-resize'; });
+        document.addEventListener('mousemove', (e) => {
+            if (isResizingSidebar) { const newWidth = e.clientX; if (newWidth > 200 && newWidth < 600) { sidebar.style.width = newWidth + 'px'; localStorage.setItem('sidebarWidth', newWidth); } }
+            if (isResizingResponse) { const newHeight = window.innerHeight - e.clientY; if (newHeight > 100 && newHeight < window.innerHeight - 200) { responseContainer.style.height = newHeight + 'px'; localStorage.setItem('responseHeight', newHeight); } }
+        });
+        document.addEventListener('mouseup', () => { isResizingSidebar = false; isResizingResponse = false; sidebarResizer.classList.remove('active'); responseResizer.classList.remove('active'); document.body.style.cursor = 'default'; });
     </script>
 </body>
 </html>

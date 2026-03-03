@@ -42,6 +42,7 @@ func (s *Server) Start(port int) error {
 	http.HandleFunc("/api/requests/duplicate", s.handleDuplicateRequest)
 	http.HandleFunc("/api/requests/reorder", s.handleReorderRequest)
 	http.HandleFunc("/api/requests/update", s.handleUpdateRequest)
+	http.HandleFunc("/api/requests/delete", s.handleDeleteRequest)
 	http.HandleFunc("/api/variables", s.handleVariables)
 	http.HandleFunc("/api/history", s.handleGetHistory)
 	http.HandleFunc("/api/history/clear", s.handleClearHistory)
@@ -179,6 +180,43 @@ func (s *Server) handleMockRequest(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNotFound)
 	fmt.Fprintf(w, "No mock response found for %s %s", r.Method, mockPath)
+}
+
+func (s *Server) handleDeleteRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var targetIdx = -1
+	for i, req := range s.FlatList {
+		if req.Path == input.Path {
+			targetIdx = i
+			break
+		}
+	}
+
+	if targetIdx == -1 {
+		http.Error(w, "Request not found", http.StatusNotFound)
+		return
+	}
+
+	// Delete file
+	s.Storage.DeleteRequestFile(input.Path)
+
+	// Remove from list
+	s.FlatList = append(s.FlatList[:targetIdx], s.FlatList[targetIdx+1:]...)
+	s.Collection.Item = models.ReconstructItems(s.FlatList)
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) handleVariables(w http.ResponseWriter, r *http.Request) {

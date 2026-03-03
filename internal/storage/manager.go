@@ -106,6 +106,11 @@ func (m *Manager) SaveSingleRequest(req models.RequestInfo) {
 	ioutil.WriteFile(filepath.Join(m.OutputDir, filename), data, 0644)
 }
 
+func (m *Manager) DeleteRequestFile(path string) {
+	filename := getSafeFilename(path)
+	os.Remove(filepath.Join(m.OutputDir, filename))
+}
+
 func getSafeFilename(path string) string {
 	reg := regexp.MustCompile(`[^a-zA-Z0-9\-_]`)
 	safe := reg.ReplaceAllString(path, "_")
