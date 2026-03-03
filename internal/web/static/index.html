@@ -132,6 +132,7 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            position: relative;
         }
         .request-item:hover { background: var(--bg-item-hover); }
         .request-item.active { background: var(--bg-item-active); border-left: 2px solid var(--postman-orange); }
@@ -146,6 +147,27 @@
         .method-POST { color: var(--method-post); }
         .method-PUT { color: var(--method-put); }
         .method-DELETE { color: var(--method-delete); }
+        .status-0 { color: #eb2013; }
+
+        /* Context Menu */
+        #context-menu {
+            position: fixed;
+            background: var(--bg-sidebar);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            z-index: 2000;
+            display: none;
+            flex-direction: column;
+            padding: 5px 0;
+            border-radius: 4px;
+        }
+        .context-menu-item {
+            padding: 8px 20px;
+            font-size: 12px;
+            cursor: pointer;
+            color: var(--text-main);
+        }
+        .context-menu-item:hover { background: var(--bg-item-hover); color: var(--postman-orange); }
 
         /* Main Content */
         #main {
@@ -300,6 +322,10 @@
             justify-content: space-between;
             background: #212121;
         }
+        #response-meta {
+            display: flex;
+            align-items: center;
+        }
         #response-body {
             flex: 1;
             padding: 15px;
@@ -314,24 +340,40 @@
 </head>
 <body>
     <div id="sidebar">
+        <div style="padding: 10px; border-bottom: 1px solid var(--border-color);">
+            <input type="text" id="sidebar-search" placeholder="Search requests..." 
+                   style="width: 100%; background: #2d2d2d; border: 1px solid var(--border-color); color: white; padding: 6px 10px; border-radius: 4px; font-size: 12px; box-sizing: border-box;"
+                   oninput="filterSidebar(this.value)">
+        </div>
+        <div id="sidebar-tabs" style="display: flex; border-bottom: 1px solid var(--border-color);">
+            <div id="tab-collections" class="tab active" style="flex: 1; text-align: center; padding: 10px; font-size: 11px; font-weight: bold;" onclick="switchSidebar('collections')">COLLECTIONS</div>
+            <div id="tab-history" class="tab" style="flex: 1; text-align: center; padding: 10px; font-size: 11px; font-weight: bold;" onclick="switchSidebar('history')">HISTORY</div>
+        </div>
         <div id="sidebar-header">
-            <span>COLLECTIONS</span>
-            <div style="display: flex; gap: 5px;">
+            <span id="sidebar-title">COLLECTIONS</span>
+            <div id="collection-actions" style="display: flex; gap: 5px;">
                 <button class="sidebar-action-btn" title="Global Variables" onclick="showVariablesModal()">Vars</button>
                 <button class="sidebar-action-btn" title="New Request" onclick="showNewModal()">New</button>
                 <button class="sidebar-action-btn" title="Edit Selected" onclick="showEditModal()">Edit</button>
                 <button class="sidebar-action-btn" title="Duplicate Selected" onclick="showDuplicateModal()">Copy</button>
             </div>
+            <div id="history-actions" style="display: none; gap: 5px;">
+                <button class="sidebar-action-btn" title="Clear History" onclick="clearHistory()">Clear</button>
+            </div>
         </div>
         <div id="collection-tree">
             <!-- Tree will be injected here -->
+        </div>
+        <div id="history-list" style="display: none; flex: 1; overflow-y: auto; padding: 10px 0;">
+            <!-- History items here -->
         </div>
     </div>
 
     <div id="main">
         <div id="request-header">
-            <div style="display: flex; align-items: center; margin-bottom: 10px;">
+            <div style="display: flex; align-items: center; margin-bottom: 10px; gap: 10px;">
                 <button id="save-btn" onclick="saveCurrentRequest()">Save Changes</button>
+                <button class="sidebar-action-btn" style="height: 30px; padding: 0 15px;" onclick="showCodeModal()">Code Snippet</button>
             </div>
             <div class="url-bar-container">
                 <div id="req-method-display">GET</div>
@@ -343,6 +385,7 @@
         <div class="tabs">
             <div class="tab active" onclick="switchTab('body')">Body</div>
             <div class="tab" onclick="switchTab('headers')">Headers</div>
+            <div class="tab" onclick="switchTab('mocks')">Mocks</div>
             <div class="tab" onclick="switchTab('scripts')">Pre-request</div>
             <div class="tab" onclick="switchTab('tests')">Post-request</div>
         </div>
@@ -369,6 +412,14 @@
                 </div>
                 <div id="req-headers-list"></div>
             </div>
+            <div id="pane-mocks" class="pane">
+                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
+                    Mock URL: <code id="mock-url-display" style="background: #333; padding: 2px 5px; border-radius: 3px;">/mock/...</code>
+                </div>
+                <div id="mocks-list" style="overflow-y: auto; flex: 1;">
+                    <!-- Mocks here -->
+                </div>
+            </div>
             <div id="pane-scripts" class="pane">
                 <textarea id="req-prerequest-input" spellcheck="false" placeholder="// Pre-request Script (JavaScript)"></textarea>
             </div>
@@ -382,6 +433,7 @@
                 <div class="tabs" style="border-bottom: none; padding: 0;">
                     <div class="tab active" style="padding: 5px 10px; font-size: 11px;" onclick="switchResponseTab('body')">Body</div>
                     <div class="tab" style="padding: 5px 10px; font-size: 11px;" onclick="switchResponseTab('headers')">Headers</div>
+                    <div class="tab" style="padding: 5px 10px; font-size: 11px;" onclick="switchResponseTab('preview')">Preview</div>
                 </div>
                 <div id="response-meta"></div>
             </div>
@@ -391,10 +443,16 @@
             <div id="resp-pane-headers" class="pane" style="padding: 15px; overflow: auto; font-family: monospace; font-size: 12px; color: #a6a6a6;">
                 <!-- Response headers here -->
             </div>
+            <div id="resp-pane-preview" class="pane" style="padding: 0; background: white;">
+                <iframe id="response-preview-frame" style="width: 100%; height: 100%; border: none;"></iframe>
+                <div id="response-preview-img-container" style="display: none; justify-content: center; align-items: center; height: 100%; overflow: auto;">
+                    <img id="response-preview-img" style="max-width: 100%; max-height: 100%;">
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- New Request Modal -->
+    <!-- Modals (New, Duplicate, Edit, Variables) -->
     <div id="new-modal" class="modal-overlay">
         <div class="modal">
             <h3 class="modal-title">New Request</h3>
@@ -404,88 +462,104 @@
             </div>
             <div class="form-group">
                 <label>Method</label>
-                <select id="new-method">
-                    <option>GET</option>
-                    <option>POST</option>
-                    <option>PUT</option>
-                    <option>DELETE</option>
-                    <option>PATCH</option>
+                <select id="new-method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select>
+            </div>
+            <div class="form-group"><label>URL</label><input type="text" id="new-url" value="https://"></div>
+            <div class="modal-actions"><button class="btn-cancel" onclick="closeModal('new-modal')">Cancel</button><button class="btn-save" onclick="saveNewRequest()">Save</button></div>
+        </div>
+    </div>
+    <div id="duplicate-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Duplicate Request</h3><div class="form-group"><label>New Path</label><input type="text" id="duplicate-path"></div><div class="modal-actions"><button class="btn-cancel" onclick="closeModal('duplicate-modal')">Cancel</button><button class="btn-save" onclick="saveDuplicateRequest()">Duplicate</button></div></div></div>
+    <div id="edit-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Edit/Move Request</h3><div class="form-group"><label>Path</label><input type="text" id="edit-path"></div><div class="form-group"><label>Method</label><select id="edit-method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select></div><div class="form-group"><label>URL</label><input type="text" id="edit-url"></div><div class="modal-actions"><button class="btn-cancel" onclick="closeModal('edit-modal')">Cancel</button><button class="btn-save" onclick="saveEditRequest()">Update</button></div></div></div>
+    <div id="variables-modal" class="modal-overlay"><div class="modal" style="width: 500px;"><h3 class="modal-title">Global Variables</h3><div id="variables-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;"></div><button class="sidebar-action-btn" onclick="addVariableRow()">+ Add Variable</button><div class="modal-actions"><button class="btn-cancel" onclick="closeModal('variables-modal')">Cancel</button><button class="btn-save" onclick="saveVariables()">Save Variables</button></div></div></div>
+
+    <!-- Variables Modal omitted for space... but exists -->
+    <div id="code-modal" class="modal-overlay">
+        <div class="modal" style="width: 600px;">
+            <h3 class="modal-title">Code Snippet</h3>
+            <div class="form-group">
+                <label>Language</label>
+                <select id="snippet-lang" onchange="generateSnippet(this.value)">
+                    <option value="javascript">JavaScript (Fetch)</option>
+                    <option value="go">Go (net/http)</option>
+                    <option value="python">Python (requests)</option>
                 </select>
             </div>
-            <div class="form-group">
-                <label>URL</label>
-                <input type="text" id="new-url" value="https://">
-            </div>
+            <textarea id="snippet-output" style="height: 300px; font-size: 12px;" readonly></textarea>
             <div class="modal-actions">
-                <button class="btn-cancel" onclick="closeModal('new-modal')">Cancel</button>
-                <button class="btn-save" onclick="saveNewRequest()">Save</button>
+                <button class="btn-cancel" onclick="closeModal('code-modal')">Close</button>
+                <button class="btn-save" onclick="copySnippet()">Copy to Clipboard</button>
             </div>
         </div>
     </div>
 
-    <!-- Duplicate Modal -->
-    <div id="duplicate-modal" class="modal-overlay">
-        <div class="modal">
-            <h3 class="modal-title">Duplicate Request</h3>
-            <div class="form-group">
-                <label>New Path</label>
-                <input type="text" id="duplicate-path">
-            </div>
-            <div class="modal-actions">
-                <button class="btn-cancel" onclick="closeModal('duplicate-modal')">Cancel</button>
-                <button class="btn-save" onclick="saveDuplicateRequest()">Duplicate</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Edit Modal -->
-    <div id="edit-modal" class="modal-overlay">
-        <div class="modal">
-            <h3 class="modal-title">Edit Request</h3>
-            <div class="form-group">
-                <label>Path</label>
-                <input type="text" id="edit-path">
-            </div>
-            <div class="form-group">
-                <label>Method</label>
-                <select id="edit-method">
-                    <option>GET</option>
-                    <option>POST</option>
-                    <option>PUT</option>
-                    <option>DELETE</option>
-                    <option>PATCH</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>URL</label>
-                <input type="text" id="edit-url">
-            </div>
-            <div class="modal-actions">
-                <button class="btn-cancel" onclick="closeModal('edit-modal')">Cancel</button>
-                <button class="btn-save" onclick="saveEditRequest()">Update</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Variables Modal -->
-    <div id="variables-modal" class="modal-overlay">
-        <div class="modal" style="width: 500px;">
-            <h3 class="modal-title">Global Variables</h3>
-            <div id="variables-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;">
-                <!-- Rows will be injected here -->
-            </div>
-            <button class="sidebar-action-btn" onclick="addVariableRow()">+ Add Variable</button>
-            <div class="modal-actions">
-                <button class="btn-cancel" onclick="closeModal('variables-modal')">Cancel</button>
-                <button class="btn-save" onclick="saveVariables()">Save Variables</button>
-            </div>
-        </div>
+    <div id="context-menu">
+        <div class="context-menu-item" onclick="moveSelected('up')">Move Up</div>
+        <div class="context-menu-item" onclick="moveSelected('down')">Move Down</div>
+        <div class="context-menu-item" onclick="showEditModal()">Move/Rename...</div>
+        <div class="context-menu-item" onclick="showDuplicateModal()">Duplicate</div>
     </div>
 
     <script>
         let flatRequests = [];
         let currentRequest = null;
-        let responseCache = {}; // Cache responses for the session
+        let responseCache = {}; 
+        let menuTarget = null;
+        let activeSidebar = 'collections';
+
+        function showCodeModal() {
+            if (!currentRequest) return alert("Select a request first");
+            document.getElementById('code-modal').classList.add('show');
+            generateSnippet(document.getElementById('snippet-lang').value);
+        }
+
+        function generateSnippet(lang) {
+            const req = currentRequest.request;
+            const method = req.method;
+            const url = req.url.raw;
+            const headers = req.header || [];
+            const body = req.body ? (req.body.raw || '') : '';
+            
+            let code = "";
+            if (lang === 'javascript') {
+                code = `fetch("${url}", {\n  method: "${method}",\n  headers: {\n${headers.map(h => `    "${h.key}": "${h.value}"`).join(',\n')}\n  }${body ? `,\n  body: JSON.stringify(${body})` : ''}\n})\n.then(res => res.json())\n.then(console.log);`;
+            } else if (lang === 'go') {
+                code = `package main\n\nimport (\n  "net/http"\n  "io/ioutil"\n  "strings"\n)\n\nfunc main() {\n  url := "${url}"\n  method := "${method}"\n  payload := strings.NewReader(\`${body}\`)\n\n  client := &http.Client{}\n  req, _ := http.NewRequest(method, url, payload)\n\n${headers.map(h => `  req.Header.Add("${h.key}", "${h.value}")`).join('\n')}\n\n  res, _ := client.Do(req)\n  defer res.Body.Close()\n  body, _ := ioutil.ReadAll(res.Body)\n  println(string(body))\n}`;
+            } else if (lang === 'python') {
+                code = `import requests\n\nurl = "${url}"\nheaders = {\n${headers.map(h => `    "${h.key}": "${h.value}"`).join(',\n')}\n}\n${body ? `payload = ${body}\nresponse = requests.request("${method}", url, json=payload, headers=headers)` : `response = requests.request("${method}", url, headers=headers)`}\n\nprint(response.text)`;
+            }
+            document.getElementById('snippet-output').value = code;
+        }
+
+        function copySnippet() {
+            const el = document.getElementById('snippet-output');
+            el.select();
+            document.execCommand('copy');
+            alert("Copied to clipboard!");
+        }
+
+        function filterSidebar(query) {
+            query = query.toLowerCase();
+            const treeItems = document.querySelectorAll('#collection-tree .request-item');
+            const historyItems = document.querySelectorAll('#history-list .request-item');
+            const filter = (items) => {
+                items.forEach(item => {
+                    const path = item.dataset.path.toLowerCase();
+                    const isMatch = path.includes(query);
+                    item.style.display = isMatch ? 'flex' : 'none';
+                    if (isMatch && query !== '') {
+                        let p = item.parentElement;
+                        while (p && p.id !== 'collection-tree') {
+                            if (p.classList.contains('folder-content')) {
+                                p.classList.add('show');
+                                if (p.previousElementSibling) p.previousElementSibling.classList.add('expanded');
+                            }
+                            p = p.parentElement;
+                        }
+                    }
+                });
+            };
+            filter(treeItems); filter(historyItems);
+        }
 
         async function init() {
             try {
@@ -494,56 +568,110 @@
                 flatRequests = data.flat;
                 const treeContainer = document.getElementById('collection-tree');
                 treeContainer.innerHTML = '';
-                
-                // Render collection tree
-                if (data.collection && data.collection.item) {
-                    renderTree(treeContainer, data.collection.item, "");
-                }
+                if (data.collection && data.collection.item) renderTree(treeContainer, data.collection.item, "");
 
-                // Render custom requests not in collection
                 const visited = new Set();
-                function markVisited(items, prefix) {
+                const mark = (items, prefix) => {
                     if (!items) return;
                     items.forEach(item => {
                         const path = prefix ? `${prefix} > ${item.name}` : item.name;
                         if (item.request) visited.add(path);
-                        if (item.item) markVisited(item.item, path);
+                        if (item.item) mark(item.item, path);
                     });
+                };
+                mark(data.collection.item, "");
+                const custom = flatRequests.filter(r => !visited.has(r.path));
+                if (custom.length > 0) {
+                    const folder = document.createElement('div');
+                    folder.className = 'folder'; folder.textContent = 'Custom Requests';
+                    const content = document.createElement('div');
+                    content.className = 'folder-content';
+                    folder.onclick = () => { folder.classList.toggle('expanded'); content.classList.toggle('show'); };
+                    custom.forEach(req => content.appendChild(createRequestNode(req.path, req.request.method, req.path)));
+                    treeContainer.appendChild(folder); treeContainer.appendChild(content);
                 }
-                markVisited(data.collection.item, "");
+            } catch (e) { console.error(e); }
+        }
 
-                const customRequests = flatRequests.filter(r => !visited.has(r.path));
-                if (customRequests.length > 0) {
-                    const customFolder = document.createElement('div');
-                    customFolder.className = 'folder';
-                    customFolder.textContent = 'Custom Requests';
-                    const customContent = document.createElement('div');
-                    customContent.className = 'folder-content';
-                    
-                    customFolder.onclick = () => {
-                        customFolder.classList.toggle('expanded');
-                        customContent.classList.toggle('show');
-                    };
+        function switchSidebar(tab) {
+            activeSidebar = tab;
+            document.getElementById('tab-collections').classList.toggle('active', tab === 'collections');
+            document.getElementById('tab-history').classList.toggle('active', tab === 'history');
+            document.getElementById('collection-tree').style.display = tab === 'collections' ? 'block' : 'none';
+            document.getElementById('collection-actions').style.display = tab === 'collections' ? 'flex' : 'none';
+            document.getElementById('history-actions').style.display = tab === 'history' ? 'flex' : 'none';
+            document.getElementById('sidebar-title').textContent = tab.toUpperCase();
+            document.getElementById('history-list').style.display = tab === 'history' ? 'block' : 'none';
+            if (tab === 'history') renderHistory();
+        }
 
-                    customRequests.forEach(req => {
-                        const reqDiv = document.createElement('div');
-                        reqDiv.className = 'request-item';
-                        reqDiv.dataset.path = req.path;
-                        reqDiv.innerHTML = `
-                            <span class="method-tag method-${req.request.method}">${req.request.method}</span>
-                            <span>${req.path}</span>
-                        `;
-                        reqDiv.onclick = (e) => { e.stopPropagation(); selectRequest(req.path); };
-                        customContent.appendChild(reqDiv);
-                    });
+        async function renderHistory() {
+            const list = document.getElementById('history-list');
+            list.innerHTML = '<div style="padding: 20px; color: #666; font-size: 12px;">Loading...</div>';
+            try {
+                const resp = await fetch('/api/history');
+                const history = await resp.json();
+                list.innerHTML = history.length === 0 ? '<div style="padding: 20px; color: #666; font-size: 12px; font-style: italic;">No history yet.</div>' : '';
+                history.reverse().forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'request-item';
+                    div.dataset.path = item.path;
+                    div.style = 'flex-direction: column; align-items: flex-start; height: auto; padding: 10px 15px; border-bottom: 1px solid #222; position: relative;';
+                    let statusColor = item.statusCode >= 400 ? '#eb2013' : (item.statusCode >= 300 ? '#ffb400' : '#0cbb52');
+                    div.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; width: 100%; margin-bottom: 5px;">
+                            <span class="method-tag method-${item.method}" style="width: auto; margin-right: 10px;">${item.method}</span>
+                            <span style="color: ${statusColor}; font-weight: bold; font-size: 10px;">${item.statusCode}</span>
+                        </div>
+                        <div style="font-size: 11px; font-weight: 600; color: #eee; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 90%;">${item.path}</div>
+                        <div style="font-size: 9px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 90%;">${item.url}</div>
+                        <div style="font-size: 9px; color: #444; margin-top: 5px;">${new Date(item.timestamp).toLocaleTimeString()} • ${item.duration}ms</div>
+                        <button class="btn-remove-header" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%);" onclick="event.stopPropagation(); deleteHistoryItem('${item.timestamp}')">✕</button>
+                    `;
+                    div.onclick = () => selectRequest(item.path);
+                    list.appendChild(div);
+                });
+            } catch (e) { list.innerHTML = '<div style="color:red">Error</div>'; }
+        }
 
-                    treeContainer.appendChild(customFolder);
-                    treeContainer.appendChild(customContent);
-                }
+        async function deleteHistoryItem(ts) {
+            await fetch('/api/history/delete', { method: 'POST', body: JSON.stringify({ timestamp: ts }) });
+            renderHistory();
+        }
 
-            } catch (e) {
-                console.error("Failed to load requests", e);
-            }
+        async function clearHistory() {
+            if (!confirm("Clear all history?")) return;
+            await fetch('/api/history/clear', { method: 'POST' });
+            renderHistory();
+        }
+
+        function createRequestNode(path, method, name) {
+            const div = document.createElement('div');
+            div.className = 'request-item';
+            div.dataset.path = path;
+            div.innerHTML = `<span class="method-tag method-${method}">${method}</span><span>${name}</span>`;
+            div.onclick = (e) => { e.stopPropagation(); selectRequest(path); };
+            div.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); selectRequest(path); showContextMenu(e.pageX, e.pageY, path); };
+            return div;
+        }
+
+        function showContextMenu(x, y, path) {
+            const menu = document.getElementById('context-menu');
+            menu.style.left = x + 'px'; menu.style.top = y + 'px'; menu.style.display = 'flex';
+            menuTarget = path;
+            document.addEventListener('click', () => menu.style.display = 'none', { once: true });
+        }
+
+        async function moveSelected(dir) {
+            const idx = flatRequests.findIndex(r => r.path === menuTarget);
+            if (idx === -1) return;
+            let targetIdx = dir === 'up' ? idx - 1 : idx + 1;
+            if (targetIdx < 0 || targetIdx >= flatRequests.length) return;
+            const resp = await fetch('/api/requests/reorder', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path1: menuTarget, path2: flatRequests[targetIdx].path })
+            });
+            if (resp.ok) { await init(); selectRequest(menuTarget); }
         }
 
         async function showVariablesModal() {
@@ -551,198 +679,88 @@
             const vars = await resp.json();
             const list = document.getElementById('variables-list');
             list.innerHTML = '';
-            
-            Object.entries(vars).forEach(([key, val]) => {
-                list.appendChild(createVariableRow(key, val));
-            });
-            
+            Object.entries(vars).forEach(([k,v]) => list.appendChild(createVariableRow(k,v)));
             document.getElementById('variables-modal').classList.add('show');
         }
 
-        function createVariableRow(key = '', val = '') {
-            const row = document.createElement('div');
-            row.className = 'header-row'; // Reuse header-row styling
-            row.innerHTML = `
-                <input type="text" placeholder="Variable Name" class="var-key" value="${key}">
-                <input type="text" placeholder="Value" class="var-value" value="${val}">
-                <button class="btn-remove-header" onclick="this.parentElement.remove()">✕</button>
-            `;
-            return row;
+        function createVariableRow(k='', v='') {
+            const div = document.createElement('div'); div.className = 'header-row';
+            div.innerHTML = `<input type="text" class="var-key" value="${k}"><input type="text" class="var-value" value="${v}"><button class="btn-remove-header" onclick="this.parentElement.remove()">✕</button>`;
+            return div;
         }
 
-        function addVariableRow() {
-            document.getElementById('variables-list').appendChild(createVariableRow());
-        }
+        function addVariableRow() { document.getElementById('variables-list').appendChild(createVariableRow()); }
 
         async function saveVariables() {
-            const rows = document.querySelectorAll('#variables-list .header-row');
             const vars = {};
-            rows.forEach(row => {
-                const k = row.querySelector('.var-key').value;
-                const v = row.querySelector('.var-value').value;
-                if (k) vars[k] = v;
+            document.querySelectorAll('#variables-list .header-row').forEach(row => {
+                const k = row.querySelector('.var-key').value; if(k) vars[k] = row.querySelector('.var-value').value;
             });
-
-            const resp = await fetch('/api/variables', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(vars)
-            });
-
-            if (resp.ok) {
-                closeModal('variables-modal');
-            }
+            const resp = await fetch('/api/variables', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(vars) });
+            if (resp.ok) closeModal('variables-modal');
         }
 
-        function showNewModal() {
-            document.getElementById('new-modal').classList.add('show');
-        }
-
+        function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+        function showNewModal() { document.getElementById('new-modal').classList.add('show'); }
         function showDuplicateModal() {
-            if (!currentRequest) {
-                alert("Please select a request to duplicate first.");
-                return;
-            }
-            document.getElementById('duplicate-path').value = currentRequest.path + " Copy";
+            const path = menuTarget || (currentRequest ? currentRequest.path : null);
+            if (!path) return alert("Select a request");
+            document.getElementById('duplicate-path').value = path + " Copy";
             document.getElementById('duplicate-modal').classList.add('show');
         }
-
         function showEditModal() {
-            if (!currentRequest) {
-                alert("Please select a request to edit first.");
-                return;
-            }
-            document.getElementById('edit-path').value = currentRequest.path;
-            document.getElementById('edit-method').value = currentRequest.request.method;
-            document.getElementById('edit-url').value = currentRequest.request.url.raw;
+            const path = menuTarget || (currentRequest ? currentRequest.path : null);
+            if (!path) return alert("Select a request");
+            const req = flatRequests.find(r => r.path === path);
+            document.getElementById('edit-path').value = req.path;
+            document.getElementById('edit-method').value = req.request.method;
+            document.getElementById('edit-url').value = req.request.url.raw;
             document.getElementById('edit-modal').classList.add('show');
         }
 
         async function saveEditRequest() {
+            const path = menuTarget || (currentRequest ? currentRequest.path : null);
             const newPath = document.getElementById('edit-path').value;
-            const method = document.getElementById('edit-method').value;
-            const url = document.getElementById('edit-url').value;
-
-            if (!newPath || !url || !currentRequest) return;
-
-            const preReqObj = (currentRequest.events || []).find(e => e.listen === 'prerequest');
-            const testObj = (currentRequest.events || []).find(e => e.listen === 'test');
-
+            const req = flatRequests.find(r => r.path === path);
+            const pre = (req.events || []).find(e => e.listen === 'prerequest');
+            const test = (req.events || []).find(e => e.listen === 'test');
             const resp = await fetch('/api/requests/update', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    oldPath: currentRequest.path, 
-                    newPath: newPath,
-                    method: method,
-                    url: url,
-                    bodyMode: (currentRequest.request.body && currentRequest.request.body.mode) || 'raw',
-                    bodyRaw: currentRequest.request.body ? (currentRequest.request.body.raw || '') : '',
-                    urlencoded: currentRequest.request.body ? (currentRequest.request.body.urlencoded || []) : [],
-                    headers: currentRequest.request.header || [],
-                    preRequestScript: preReqObj ? preReqObj.script.exec.join('\n') : '',
-                    testScript: testObj ? testObj.script.exec.join('\n') : ''
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    oldPath: path, newPath: newPath, method: document.getElementById('edit-method').value, url: document.getElementById('edit-url').value,
+                    bodyMode: (req.request.body && req.request.body.mode) || 'raw', bodyRaw: req.request.body ? (req.request.body.raw || '') : '',
+                    urlencoded: req.request.body ? (req.request.body.urlencoded || []) : [], headers: req.request.header || [],
+                    preRequestScript: pre ? pre.script.exec.join('\n') : '', testScript: test ? test.script.exec.join('\n') : ''
                 })
             });
-
-
-
-            if (resp.ok) {
-                closeModal('edit-modal');
-                // We need to re-init and potentially re-select if path changed
-                await init();
-                selectRequest(newPath);
-            }
-        }
-
-        function closeModal(id) {
-            document.getElementById(id).classList.remove('show');
+            if (resp.ok) { closeModal('edit-modal'); await init(); selectRequest(newPath); }
         }
 
         async function saveNewRequest() {
             const path = document.getElementById('new-path').value;
-            const method = document.getElementById('new-method').value;
-            const url = document.getElementById('new-url').value;
-
-            if (!path || !url) return;
-
             const resp = await fetch('/api/requests/new', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    path, 
-                    method, 
-                    url,
-                    bodyMode: 'raw',
-                    bodyRaw: '',
-                    urlencoded: [],
-                    headers: [],
-                    preRequestScript: '',
-                    testScript: ''
-                })
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path, method: document.getElementById('new-method').value, url: document.getElementById('new-url').value, bodyMode: 'raw', bodyRaw: '', urlencoded: [], headers: [], preRequestScript: '', testScript: '' })
             });
-
-            if (resp.ok) {
-                closeModal('new-modal');
-                init();
-            }
+            if (resp.ok) { closeModal('new-modal'); init(); }
         }
-
 
         async function saveDuplicateRequest() {
-            const newPath = document.getElementById('duplicate-path').value;
-            if (!newPath || !currentRequest) return;
-
-            const resp = await fetch('/api/requests/duplicate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: currentRequest.path, newPath: newPath })
-            });
-
-            if (resp.ok) {
-                closeModal('duplicate-modal');
-                init();
-            }
+            const path = menuTarget || (currentRequest ? currentRequest.path : null);
+            const resp = await fetch('/api/requests/duplicate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, newPath: document.getElementById('duplicate-path').value }) });
+            if (resp.ok) { closeModal('duplicate-modal'); init(); }
         }
 
-        function renderTree(container, items, pathPrefix) {
+        function renderTree(container, items, prefix) {
             if (!items) return;
             items.forEach(item => {
-                const currentPath = pathPrefix ? `${pathPrefix} > ${item.name}` : item.name;
-                
+                const path = prefix ? `${prefix} > ${item.name}` : item.name;
                 if (item.item && item.item.length > 0) {
-                    // It's a folder
-                    const folderDiv = document.createElement('div');
-                    folderDiv.className = 'folder';
-                    folderDiv.textContent = item.name;
-                    
-                    const contentDiv = document.createElement('div');
-                    contentDiv.className = 'folder-content';
-                    
-                    folderDiv.onclick = (e) => {
-                        e.stopPropagation();
-                        folderDiv.classList.toggle('expanded');
-                        contentDiv.classList.toggle('show');
-                    };
-                    
-                    container.appendChild(folderDiv);
-                    container.appendChild(contentDiv);
-                    renderTree(contentDiv, item.item, currentPath);
-                } else if (item.request) {
-                    // It's a request
-                    const reqDiv = document.createElement('div');
-                    reqDiv.className = 'request-item';
-                    reqDiv.dataset.path = currentPath;
-                    reqDiv.innerHTML = `
-                        <span class="method-tag method-${item.request.method}">${item.request.method}</span>
-                        <span>${item.name}</span>
-                    `;
-                    reqDiv.onclick = (e) => {
-                        e.stopPropagation();
-                        selectRequest(currentPath);
-                    };
-                    container.appendChild(reqDiv);
-                }
+                    const f = document.createElement('div'); f.className = 'folder'; f.textContent = item.name;
+                    const c = document.createElement('div'); c.className = 'folder-content';
+                    f.onclick = (e) => { e.stopPropagation(); f.classList.toggle('expanded'); c.classList.toggle('show'); };
+                    container.appendChild(f); container.appendChild(c); renderTree(c, item.item, path);
+                } else if (item.request) { container.appendChild(createRequestNode(path, item.request.method, item.name)); }
             });
         }
 
@@ -753,218 +771,173 @@
         }
 
         function renderUrlencoded(data) {
-            const list = document.getElementById('req-urlencoded-list');
-            list.innerHTML = '';
-            (data || []).forEach(item => {
-                list.appendChild(createUrlencodedRow(item.key, item.value));
+            const list = document.getElementById('req-urlencoded-list'); list.innerHTML = '';
+            (data || []).forEach(item => list.appendChild(createUrlencodedRow(item.key, item.value)));
+        }
+
+        function createUrlencodedRow(k='', v='') {
+            const div = document.createElement('div'); div.className = 'header-row';
+            div.innerHTML = `<input type="text" class="urlencoded-key" value="${k}"><input type="text" class="urlencoded-value" value="${v}"><button class="btn-remove-header" onclick="this.parentElement.remove()">✕</button>`;
+            return div;
+        }
+
+        function addUrlencodedRow() { document.getElementById('req-urlencoded-list').appendChild(createUrlencodedRow()); }
+
+        async function saveAsMock() {
+            if (!currentRequest) return;
+            const path = currentRequest.path; const cached = responseCache[path]; if (!cached) return;
+            const name = prompt("Mock Name:", "Default Mock"); if (!name) return;
+            const meta = document.getElementById('response-meta').innerText || "";
+            const match = meta.match(/Status: (\d+) (.*)/);
+            const code = match ? parseInt(match[1]) : 200;
+            const status = match ? match[2].split('\n')[0] : "OK";
+            const headerRows = document.querySelectorAll('#resp-pane-headers div');
+            const headers = Array.from(headerRows).map(row => {
+                const t = row.innerText; const i = t.indexOf(':'); return { key: t.substring(0, i).trim(), value: t.substring(i+1).trim() };
             });
+            const resp = await fetch('/api/mock/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, name, code, status, body: cached.body, headers }) });
+            if (resp.ok) { alert("Saved!"); await init(); selectRequest(path); }
         }
 
-        function createUrlencodedRow(key = '', value = '') {
-            const row = document.createElement('div');
-            row.className = 'header-row';
-            row.innerHTML = `
-                <input type="text" placeholder="Key" class="urlencoded-key" value="${key}">
-                <input type="text" placeholder="Value" class="urlencoded-value" value="${value}">
-                <button class="btn-remove-header" onclick="this.parentElement.remove()">✕</button>
-            `;
-            return row;
-        }
-
-        function addUrlencodedRow() {
-            document.getElementById('req-urlencoded-list').appendChild(createUrlencodedRow());
+        function renderMocks() {
+            const list = document.getElementById('mocks-list'); list.innerHTML = '';
+            const mocks = currentRequest.responses || [];
+            if (mocks.length === 0) list.innerHTML = '<div style="padding:10px;color:#666">No mocks.</div>';
+            mocks.forEach(m => {
+                const div = document.createElement('div'); div.style = 'border:1px solid var(--border-color);padding:10px;margin-bottom:10px;background:#222;';
+                div.innerHTML = `<div style="color:var(--postman-orange)">${m.name}</div><div style="color:#0cbb52">${m.code} ${m.status}</div><div style="font-size:10px;color:#888">${m.body.substring(0,100)}</div>`;
+                list.appendChild(div);
+            });
+            let url = currentRequest.request.url.raw;
+            if(url.includes('://')) url = url.substring(url.indexOf('://')+3);
+            if(url.includes('/')) url = url.substring(url.indexOf('/')); else url = '/';
+            document.getElementById('mock-url-display').textContent = '/mock' + url.split('?')[0];
         }
 
         function selectRequest(path) {
-            currentRequest = flatRequests.find(r => r.path === path);
-            if (!currentRequest) return;
-
-            document.querySelectorAll('.request-item').forEach(el => {
-                el.classList.toggle('active', el.dataset.path === path);
-            });
-
+            currentRequest = flatRequests.find(r => r.path === path); if (!currentRequest) return;
+            document.querySelectorAll('.request-item').forEach(el => el.classList.toggle('active', el.dataset.path === path));
             document.getElementById('req-method-display').textContent = currentRequest.request.method;
             document.getElementById('req-method-display').className = `method-${currentRequest.request.method}`;
             document.getElementById('req-url-input').value = currentRequest.request.url.raw;
-            
-            // Body Mode
-            const mode = (currentRequest.request.body && currentRequest.request.body.mode) || 'raw';
-            switchBodyMode(mode);
-            
+            const mode = (currentRequest.request.body && currentRequest.request.body.mode) || 'raw'; switchBodyMode(mode);
             document.getElementById('req-body-input').value = currentRequest.request.body ? (currentRequest.request.body.raw || '') : '';
             renderUrlencoded(currentRequest.request.body ? currentRequest.request.body.urlencoded : []);
-            
-            // Scripts
-            const preReq = (currentRequest.events || []).find(e => e.listen === 'prerequest');
-            const tests = (currentRequest.events || []).find(e => e.listen === 'test');
-            document.getElementById('req-prerequest-input').value = preReq ? (preReq.script.exec.join('\n') || '') : '';
-            document.getElementById('req-tests-input').value = tests ? (tests.script.exec.join('\n') || '') : '';
-
-            renderHeaders(currentRequest.request.header || []);
-
-            // Restore from session cache
+            const pre = (currentRequest.events || []).find(e => e.listen === 'prerequest');
+            const test = (currentRequest.events || []).find(e => e.listen === 'test');
+            document.getElementById('req-prerequest-input').value = pre ? pre.script.exec.join('\n') : '';
+            document.getElementById('req-tests-input').value = test ? test.script.exec.join('\n') : '';
+            renderHeaders(currentRequest.request.header || []); renderMocks();
             const cached = responseCache[path];
             if (cached) {
-                document.getElementById('response-body').textContent = cached.body || '';
-                document.getElementById('resp-pane-headers').innerHTML = cached.headers || '';
-                document.getElementById('response-meta').innerHTML = cached.meta || '';
+                document.getElementById('response-body').textContent = cached.body;
+                document.getElementById('resp-pane-headers').innerHTML = cached.headers;
+                document.getElementById('response-meta').innerHTML = cached.meta;
             } else {
                 document.getElementById('response-body').textContent = '// Ready';
                 document.getElementById('resp-pane-headers').innerHTML = '';
-                document.getElementById('response-meta').textContent = '';
+                document.getElementById('response-meta').innerHTML = '';
             }
         }
 
         function renderHeaders(headers) {
-            const hDiv = document.getElementById('req-headers-list');
-            hDiv.innerHTML = '';
-            headers.forEach((h, index) => {
-                const row = createHeaderRow(h.key, h.value);
-                hDiv.appendChild(row);
-            });
+            const div = document.getElementById('req-headers-list'); div.innerHTML = '';
+            headers.forEach(h => div.appendChild(createHeaderRow(h.key, h.value)));
         }
 
-        function createHeaderRow(key = '', value = '') {
-            const row = document.createElement('div');
-            row.className = 'header-row';
-            row.innerHTML = `
-                <input type="text" placeholder="Key" class="header-key" value="${key}">
-                <input type="text" placeholder="Value" class="header-value" value="${value}">
-                <button class="btn-remove-header" onclick="this.parentElement.remove()">✕</button>
-            `;
-            return row;
+        function createHeaderRow(k='', v='') {
+            const div = document.createElement('div'); div.className = 'header-row';
+            div.innerHTML = `<input type="text" class="header-key" value="${k}"><input type="text" class="header-value" value="${v}"><button class="btn-remove-header" onclick="this.parentElement.remove()">✕</button>`;
+            return div;
         }
 
-        function addHeaderRow() {
-            const hDiv = document.getElementById('req-headers-list');
-            hDiv.appendChild(createHeaderRow());
-        }
+        function addHeaderRow() { document.getElementById('req-headers-list').appendChild(createHeaderRow()); }
 
         async function saveCurrentRequest() {
             if (!currentRequest) return;
-            
             const method = document.getElementById('req-method-display').textContent;
             const url = document.getElementById('req-url-input').value;
             const bodyMode = document.querySelector('input[name="body-mode"]:checked').value;
             const bodyRaw = document.getElementById('req-body-input').value;
-            
-            const urlencodedRows = document.querySelectorAll('#req-urlencoded-list .header-row');
-            const urlencoded = Array.from(urlencodedRows).map(row => ({
-                key: row.querySelector('.urlencoded-key').value,
-                value: row.querySelector('.urlencoded-value').value
-            })).filter(u => u.key !== '');
-
-            const preReq = document.getElementById('req-prerequest-input').value;
-            const tests = document.getElementById('req-tests-input').value;
-            
-            const headerRows = document.querySelectorAll('#req-headers-list .header-row');
-            const headers = Array.from(headerRows).map(row => ({
-                key: row.querySelector('.header-key').value,
-                value: row.querySelector('.header-value').value
-            })).filter(h => h.key !== '');
-
-            const resp = await fetch('/api/requests/update', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    oldPath: currentRequest.path, 
-                    newPath: currentRequest.path,
-                    method: method,
-                    url: url,
-                    bodyMode: bodyMode,
-                    bodyRaw: bodyRaw,
-                    urlencoded: urlencoded,
-                    headers: headers,
-                    preRequestScript: preReq,
-                    testScript: tests
-                })
-            });
-
-
-
-            if (resp.ok) {
-                const data = await resp.json();
-                // Update local list
-                const idx = flatRequests.findIndex(r => r.path === currentRequest.path);
-                if (idx !== -1) {
-                    flatRequests[idx] = data;
-                    currentRequest = data;
-                }
-                alert("Request saved successfully!");
-            }
+            const urlencoded = Array.from(document.querySelectorAll('#req-urlencoded-list .header-row')).map(row => ({ key: row.querySelector('.urlencoded-key').value, value: row.querySelector('.urlencoded-value').value })).filter(u => u.key !== '');
+            const headers = Array.from(document.querySelectorAll('#req-headers-list .header-row')).map(row => ({ key: row.querySelector('.header-key').value, value: row.querySelector('.header-value').value })).filter(h => h.key !== '');
+            const resp = await fetch('/api/requests/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ oldPath: currentRequest.path, newPath: currentRequest.path, method, url, bodyMode, bodyRaw, urlencoded, headers, preRequestScript: document.getElementById('req-prerequest-input').value, testScript: document.getElementById('req-tests-input').value }) });
+            if (resp.ok) { const data = await resp.json(); const idx = flatRequests.findIndex(r => r.path === currentRequest.path); if (idx !== -1) { flatRequests[idx] = data; currentRequest = data; } alert("Saved!"); }
         }
 
-        function switchTab(tabName) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase() === tabName));
-            document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === `pane-${tabName}`));
+        function switchTab(tab) {
+            document.querySelectorAll('.tabs .tab').forEach(t => { if(t.parentElement.id !== 'response-header') t.classList.toggle('active', t.textContent.toLowerCase() === tab); });
+            document.querySelectorAll('#editor-container .pane').forEach(p => p.classList.toggle('active', p.id === `pane-${tab}`));
         }
 
-        function switchResponseTab(tabName) {
-            document.querySelectorAll('#response-header .tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase() === tabName));
-            document.getElementById('resp-pane-body').classList.toggle('active', tabName === 'body');
-            document.getElementById('resp-pane-headers').classList.toggle('active', tabName === 'headers');
+        function switchResponseTab(tab) {
+            document.querySelectorAll('#response-header .tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase() === tab));
+            document.getElementById('resp-pane-body').classList.toggle('active', tab === 'body');
+            document.getElementById('resp-pane-headers').classList.toggle('active', tab === 'headers');
+            document.getElementById('resp-pane-preview').classList.toggle('active', tab === 'preview');
         }
 
         async function sendRequest() {
             if (!currentRequest) return;
-            const respBodyElem = document.getElementById('response-body');
-            const respHeadersElem = document.getElementById('resp-pane-headers');
-            const metaElem = document.getElementById('response-meta');
+            const respBody = document.getElementById('response-body'); 
+            const respHeaders = document.getElementById('resp-pane-headers'); 
+            const meta = document.getElementById('response-meta');
+            const previewFrame = document.getElementById('response-preview-frame');
+            const previewImg = document.getElementById('response-preview-img');
+            const previewImgContainer = document.getElementById('response-preview-img-container');
+
+            respBody.textContent = '// Sending...'; 
+            previewFrame.style.display = 'none';
+            previewImgContainer.style.display = 'none';
             
-            respBodyElem.textContent = '// Sending...';
-            const startTime = Date.now();
-
-            const bodyMode = document.querySelector('input[name="body-mode"]:checked').value;
-            const bodyRaw = document.getElementById('req-body-input').value;
-            const urlencodedRows = document.querySelectorAll('#req-urlencoded-list .header-row');
-            const urlencoded = Array.from(urlencodedRows).map(row => ({
-                key: row.querySelector('.urlencoded-key').value,
-                value: row.querySelector('.urlencoded-value').value
-            })).filter(u => u.key !== '');
-
+            const start = Date.now();
             try {
-                const resp = await fetch('/api/send', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                const resp = await fetch('/api/send', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
                     body: JSON.stringify({ 
                         path: currentRequest.path, 
-                        bodyMode: bodyMode,
-                        bodyRaw: bodyRaw,
-                        urlencoded: urlencoded
-                    })
+                        bodyMode: document.querySelector('input[name="body-mode"]:checked').value, 
+                        bodyRaw: document.getElementById('req-body-input').value, 
+                        urlencoded: Array.from(document.querySelectorAll('#req-urlencoded-list .header-row')).map(row => ({ key: row.querySelector('.urlencoded-key').value, value: row.querySelector('.urlencoded-value').value })).filter(u => u.key !== '') 
+                    }) 
                 });
-
-                const data = await resp.json();
-                const duration = Date.now() - startTime;
+                const data = await resp.json(); 
+                const duration = Date.now() - start;
                 
-                let metaHtml = `<span>Time: ${duration}ms</span>`;
-                let bodyHtml = data.body || '';
+                let color = (data.statusCode >= 400 || data.statusCode === 0) ? '#eb2013' : (data.statusCode >= 300 ? '#ffb400' : '#0cbb52');
+                let displayStatus = data.statusCode === 0 ? data.statusText : data.statusText.split(' ').slice(1).join(' ');
+                let metaHtml = `Status: <span style="color:${color};font-weight:bold">${data.statusCode} ${displayStatus}</span> • Time: ${duration}ms`;
+                let body = data.body || '';
                 
-                // Smart prettify: only if content-type contains json
-                const contentType = (data.headers['Content-Type'] || data.headers['content-type'] || [])[0] || '';
-                if (contentType.includes('json') && bodyHtml) {
-                    try {
-                        bodyHtml = JSON.stringify(JSON.parse(bodyHtml), null, 2);
-                    } catch {}
+                // Headers parsing
+                const headers = data.headers || {};
+                const ct = (headers['Content-Type'] || headers['content-type'] || [])[0] || '';
+                
+                if (ct.includes('json') && body) {
+                    try { body = JSON.stringify(JSON.parse(body), null, 2); } catch {}
                 }
 
-                // Render headers
-                respHeadersElem.innerHTML = Object.entries(data.headers).map(([k, v]) => 
-                    `<div style="margin-bottom: 4px;"><span style="color:var(--postman-orange)">${k}:</span> ${v.join(', ')}</div>`
-                ).join('');
+                // Update Preview
+                if (ct.includes('text/html')) {
+                    previewFrame.style.display = 'block';
+                    previewFrame.srcdoc = body;
+                } else if (ct.includes('image/')) {
+                    // For images, we might need base64 from backend or handle binary
+                    // Current backend returns string body. If it's valid base64 or raw:
+                    previewImgContainer.style.display = 'flex';
+                    previewImg.src = `data:${ct};base64,${body}`;
+                } else {
+                    previewFrame.style.display = 'block';
+                    previewFrame.srcdoc = `<div style="padding:20px; font-family:sans-serif; color:#666;">Preview not available for ${ct}</div>`;
+                }
 
-                // Save to session cache
-                responseCache[currentRequest.path] = {
-                    body: bodyHtml,
-                    headers: respHeadersElem.innerHTML,
-                    meta: metaHtml
-                };
-
-                metaElem.innerHTML = metaHtml;
-                respBodyElem.textContent = bodyHtml;
-            } catch (e) {
-                respBodyElem.textContent = '// Error: ' + e.message;
-            }
+                respHeaders.innerHTML = Object.entries(headers).map(([k, v]) => `<div><span style="color:var(--postman-orange)">${k}:</span> ${v.join(', ')}</div>`).join('');
+                responseCache[currentRequest.path] = { body, headers: respHeaders.innerHTML, meta: metaHtml };
+                meta.innerHTML = `<div style="display:flex;gap:15px;align-items:center"><span>${metaHtml}</span><button class="sidebar-action-btn" onclick="saveAsMock()">Save as Mock</button></div>`;
+                respBody.textContent = body;
+                if (activeSidebar === 'history') renderHistory();
+            } catch (e) { respBody.textContent = '// Error: ' + e.message; }
         }
 
         init();

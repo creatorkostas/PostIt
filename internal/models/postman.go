@@ -1,5 +1,7 @@
 package models
 
+import "strings"
+
 type Collection struct {
 	Info Info   `json:"info"`
 	Item []Item `json:"item"`
@@ -11,10 +13,20 @@ type Info struct {
 }
 
 type Item struct {
-	Name    string   `json:"name"`
-	Event   []Event  `json:"event,omitempty"`
-	Item    []Item   `json:"item,omitempty"`
-	Request *Request `json:"request,omitempty"`
+	Name     string         `json:"name"`
+	Event    []Event        `json:"event,omitempty"`
+	Item     []Item         `json:"item,omitempty"`
+	Request  *Request       `json:"request,omitempty"`
+	Response []MockResponse `json:"response,omitempty"`
+	Order    int            `json:"order"`
+}
+
+type MockResponse struct {
+	Name   string   `json:"name"`
+	Status string   `json:"status"`
+	Code   int      `json:"code"`
+	Header []Header `json:"header"`
+	Body   string   `json:"body"`
 }
 
 type Event struct {
@@ -145,7 +157,62 @@ type Bearer struct {
 }
 
 type RequestInfo struct {
-	Path    string   `json:"path"`
-	Request *Request `json:"request"`
-	Events  []Event  `json:"events,omitempty"`
+	Path      string         `json:"path"`
+	Request   *Request       `json:"request"`
+	Responses []MockResponse `json:"responses,omitempty"`
+	Events    []Event        `json:"events,omitempty"`
+	Order     int            `json:"order"`
+}
+
+func ReconstructItems(requests []RequestInfo) []Item {
+	root := &Item{}
+
+	for _, req := range requests {
+		parts := strings.Split(req.Path, " > ")
+		current := root
+
+		for i, part := range parts {
+			isLast := i == len(parts)-1
+			found := false
+
+			for j := range current.Item {
+				if current.Item[j].Name == part {
+					current = &current.Item[j]
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				newItem := Item{Name: part, Order: req.Order}
+				current.Item = append(current.Item, newItem)
+				current = &current.Item[len(current.Item)-1]
+			}
+
+			if isLast {
+				current.Request = req.Request
+				current.Event = req.Events
+				current.Response = req.Responses
+				current.Order = req.Order
+			}
+		}
+	}
+
+	sortItems(root.Item)
+	return root.Item
+}
+
+func sortItems(items []Item) {
+	for i := 0; i < len(items); i++ {
+		for j := i + 1; j < len(items); j++ {
+			if items[i].Order > items[j].Order {
+				items[i], items[j] = items[j], items[i]
+			}
+		}
+	}
+	for i := range items {
+		if len(items[i].Item) > 0 {
+			sortItems(items[i].Item)
+		}
+	}
 }

@@ -45,11 +45,8 @@ func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.Reque
 	t.Cached = cachedRequests
 
 	// Sidebar: Tree View
-	root := tview.NewTreeNode(collection.Info.Name).SetColor(tcell.ColorYellow)
-	t.Tree = tview.NewTreeView().SetRoot(root).SetCurrentNode(root)
-
-	// Build Tree with proper paths
-	t.buildTree(root, collection.Item, "", cachedRequests)
+	t.Tree = tview.NewTreeView()
+	t.refreshTree()
 
 	// Response Area
 	t.Response = tview.NewTextView().
@@ -61,7 +58,7 @@ func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.Reque
 	// Status/Info Area
 	t.Status = tview.NewTextView().SetDynamicColors(true)
 	t.Status.SetBorder(false)
-	t.Status.SetText(" [yellow]Tab[white]: Switch | [yellow]Ctrl+R[white]: Send | [yellow]Ctrl+N[white]: New | [yellow]Ctrl+D[white]: Duplicate | [yellow]Ctrl+C[white]: Exit")
+	t.Status.SetText(" [yellow]Tab[white]: Switch | [yellow]Ctrl+R[white]: Send | [yellow]Ctrl+N[white]: New | [yellow]Ctrl+D[white]: Duplicate | [yellow]Ctrl+M[white]: Move | [yellow]Alt+Up/Down[white]: Reorder | [yellow]Ctrl+C[white]: Exit")
 
 	// Main Request Area
 	t.Main = tview.NewFlex().SetDirection(tview.FlexRow)
@@ -103,6 +100,21 @@ func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.Reque
 				t.duplicateRequest()
 			}
 			return nil
+		case tcell.KeyCtrlM:
+			if t.CurrentReq != nil {
+				t.showMoveRequestForm()
+			}
+			return nil
+		case tcell.KeyUp:
+			if event.Modifiers()&tcell.ModAlt != 0 && t.Tree.HasFocus() {
+				t.moveRequest(true)
+				return nil
+			}
+		case tcell.KeyDown:
+			if event.Modifiers()&tcell.ModAlt != 0 && t.Tree.HasFocus() {
+				t.moveRequest(false)
+				return nil
+			}
 		case tcell.KeyTab:
 			if t.Tree.HasFocus() {
 				t.App.SetFocus(t.Main)
@@ -138,7 +150,8 @@ func (t *TUIApp) buildTree(parent *tview.TreeNode, items []models.Item, prefix s
 			reqInfo := models.RequestInfo{
 				Path:    fullPath,
 				Request: item.Request,
-				Events:  item.Event, // Note: For TUI, we might need parent inheritance if not already flattened
+				Events:  item.Event,
+				Order:   item.Order,
 			}
 			
 			// Find cached version
@@ -198,11 +211,11 @@ func (t *TUIApp) sendRequest() {
 		t.Processor.RunScripts(t.CurrentReq.Events, "test", nil, nil, t.CurrentReq.Request.Header)
 
 		// 2. Execute
-		body, headers := t.Client.ExecuteRequest(t.CurrentReq.Request)
+		body, headers, statusCode, statusText := t.Client.ExecuteRequest(t.CurrentReq.Request)
 		
 		t.App.QueueUpdateDraw(func() {
-			if body == "" {
-				t.Response.SetText(" [red]No response body or error occurred.")
+			if statusCode == 0 {
+				t.Response.SetText(" [red]Failed to send request or no response received.")
 				return
 			}
 
@@ -214,7 +227,15 @@ func (t *TUIApp) sendRequest() {
 				display = string(formatted)
 			}
 
-			t.Response.SetText(display)
+			// Add status at the top
+			statusColor := "green"
+			if statusCode >= 400 {
+				statusColor = "red"
+			} else if statusCode >= 300 {
+				statusColor = "yellow"
+			}
+			
+			t.Response.SetText(fmt.Sprintf(" [yellow]Status: [%s]%d %s[white]\n\n%s", statusColor, statusCode, statusText, display))
 			
 			// 3. Run post-request scripts
 			t.Processor.RunScripts(t.CurrentReq.Events, "test", []byte(body), headers, t.CurrentReq.Request.Header)
@@ -244,7 +265,10 @@ func (t *TUIApp) refreshTree() {
 		root.AddChild(customRoot)
 	}
 
-	t.Tree.SetRoot(root).SetCurrentNode(root)
+	t.Tree.SetRoot(root)
+	if t.Tree.GetCurrentNode() == nil {
+		t.Tree.SetCurrentNode(root)
+	}
 }
 
 func (t *TUIApp) markVisited(node *tview.TreeNode, visited map[string]bool) {
@@ -291,9 +315,11 @@ func (t *TUIApp) showNewRequestForm() {
 				Method: method,
 				URL:    models.URL{Raw: url},
 			},
+			Order: len(t.Cached),
 		}
 		t.Cached = append(t.Cached, newReq)
 		t.Storage.SaveSingleRequest(newReq)
+		t.Collection.Item = models.ReconstructItems(t.Cached)
 		t.refreshTree()
 		pages.RemovePage("form")
 		t.App.SetFocus(t.Tree)
@@ -365,10 +391,12 @@ func (t *TUIApp) duplicateRequest() {
 			Path:    newPath,
 			Request: t.CurrentReq.Request.DeepCopy(),
 			Events:  eventsCopy,
+			Order:   t.CurrentReq.Order + 1,
 		}
 		
 		t.Cached = append(t.Cached, newReq)
 		t.Storage.SaveSingleRequest(newReq)
+		t.Collection.Item = models.ReconstructItems(t.Cached)
 		t.refreshTree()
 		pages.RemovePage("form")
 		t.App.SetFocus(t.Tree)
@@ -390,3 +418,163 @@ func (t *TUIApp) duplicateRequest() {
 	t.App.SetRoot(pages, true).SetFocus(form)
 }
 
+func (t *TUIApp) moveRequest(up bool) {
+	node := t.Tree.GetCurrentNode()
+	if node == nil {
+		return
+	}
+
+	ref := node.GetReference()
+	req, ok := ref.(*models.RequestInfo)
+	if !ok {
+		return
+	}
+
+	root := t.Tree.GetRoot()
+	parent := t.findParent(root, node)
+	if parent == nil {
+		return
+	}
+
+	children := parent.GetChildren()
+	var idx int
+	for i, child := range children {
+		if child == node {
+			idx = i
+			break
+		}
+	}
+
+	targetIdx := idx + 1
+	if up {
+		targetIdx = idx - 1
+	}
+
+	if targetIdx < 0 || targetIdx >= len(children) {
+		return
+	}
+
+	targetNode := children[targetIdx]
+	targetRef := targetNode.GetReference()
+	targetReq, ok := targetRef.(*models.RequestInfo)
+	if !ok {
+		// Moving past a folder - not supported for now to keep it simple
+		return
+	}
+
+	// Swap orders
+	req.Order, targetReq.Order = targetReq.Order, req.Order
+	if req.Order == targetReq.Order {
+		if up {
+			req.Order--
+		} else {
+			req.Order++
+		}
+	}
+
+	// Save both
+	t.Storage.SaveSingleRequest(*req)
+	t.Storage.SaveSingleRequest(*targetReq)
+
+	// Rebuild and refresh
+	t.Collection.Item = models.ReconstructItems(t.Cached)
+	t.refreshTree()
+	
+	// Reselect the node
+	t.selectByPath(t.Tree.GetRoot(), req.Path)
+}
+
+func (t *TUIApp) showMoveRequestForm() {
+	if t.CurrentReq == nil {
+		return
+	}
+
+	pages := tview.NewPages()
+	
+	// Create the layout
+	rightSide := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(t.Main, 0, 1, false).
+		AddItem(t.Response, 0, 1, false).
+		AddItem(t.Status, 1, 0, false)
+
+	mainLayout := tview.NewFlex().
+		AddItem(t.Tree, 35, 1, true).
+		AddItem(rightSide, 0, 3, false)
+
+	pages.AddPage("main", mainLayout, true, true)
+
+	form := tview.NewForm()
+	form.SetBorder(true).SetTitle(" Move Request ").SetTitleAlign(tview.AlignLeft)
+
+	var newPath string
+	newPath = t.CurrentReq.Path
+	form.AddInputField("New Path (e.g. Folder > Name)", newPath, 60, nil, func(text string) { newPath = text })
+
+	form.AddButton("Move", func() {
+		if newPath == "" || newPath == t.CurrentReq.Path {
+			return
+		}
+		
+		oldPath := t.CurrentReq.Path
+		t.CurrentReq.Path = newPath
+		
+		// Update in cache
+		for i := range t.Cached {
+			if t.Cached[i].Path == oldPath {
+				t.Cached[i].Path = newPath
+				break
+			}
+		}
+
+		t.Storage.SaveSingleRequest(*t.CurrentReq)
+		
+		t.Collection.Item = models.ReconstructItems(t.Cached)
+		t.refreshTree()
+		t.selectByPath(t.Tree.GetRoot(), newPath)
+		
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+	})
+	form.AddButton("Cancel", func() {
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+	})
+
+	modal := tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(nil, 0, 1, false).
+			AddItem(form, 9, 1, true).
+			AddItem(nil, 0, 1, false), 70, 1, true).
+		AddItem(nil, 0, 1, false)
+
+	pages.AddPage("form", modal, true, true)
+	t.App.SetRoot(pages, true).SetFocus(form)
+}
+
+func (t *TUIApp) findParent(root, target *tview.TreeNode) *tview.TreeNode {
+	for _, child := range root.GetChildren() {
+		if child == target {
+			return root
+		}
+		if p := t.findParent(child, target); p != nil {
+			return p
+		}
+	}
+	return nil
+}
+
+func (t *TUIApp) selectByPath(root *tview.TreeNode, path string) bool {
+	ref := root.GetReference()
+	if req, ok := ref.(*models.RequestInfo); ok && req.Path == path {
+		t.Tree.SetCurrentNode(root)
+		return true
+	}
+	
+	for _, child := range root.GetChildren() {
+		if t.selectByPath(child, path) {
+			return true
+		}
+	}
+	return false
+}
