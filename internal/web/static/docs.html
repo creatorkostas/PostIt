@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PostIt - Documentation</title>
+    <style>
+        :root {
+            --bg-app: #1c1c1c;
+            --bg-sidebar: #212121;
+            --border-color: #333333;
+            --text-main: #e6e6e6;
+            --text-secondary: #a6a6a6;
+            --postman-orange: #ff6c37;
+            --method-get: #0cbb52;
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-app);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+            justify-content: center;
+            overflow-y: auto;
+        }
+
+        .container {
+            max-width: 900px;
+            padding: 40px 20px;
+        }
+
+        header {
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+        }
+
+        h1 { color: var(--postman-orange); margin: 0; }
+        h2 { color: var(--postman-orange); border-bottom: 1px solid #333; padding-bottom: 10px; margin-top: 40px; }
+        h3 { color: #eee; margin-top: 25px; }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .back-link:hover { color: white; }
+
+        code {
+            background: #2d2d2d;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            color: #4ec9b0;
+        }
+
+        .feature-card {
+            background: var(--bg-sidebar);
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .btn-ref {
+            display: inline-block;
+            background: #333;
+            border: 1px solid #444;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            color: var(--text-secondary);
+        }
+
+        .tag {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .tag-new { background: #097bed; color: white; }
+
+        ul { padding-left: 20px; }
+        li { margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Back to App</a>
+        <header>
+            <h1>PostIt Documentation</h1>
+            <p style="color: var(--text-secondary);">Your local-first, Git-friendly API client guide.</p>
+        </header>
+
+        <section id="sidebar">
+            <h2>1. Navigation Sidebar</h2>
+            <div class="feature-card">
+                <h3>Search Bar</h3>
+                <p>Type anywhere in the search bar at the top to instantly filter your collections and history. Folders will automatically expand to show matching requests.</p>
+                
+                <h3>Tabs: Collections vs History</h3>
+                <ul>
+                    <li><strong>Collections:</strong> View your saved requests organized by folders. Right-click a request to move it up/down or duplicate it.</li>
+                    <li><strong>History:</strong> A chronological log of every request sent. Click an item to reload it, or use the <code>✕</code> to delete specific entries.</li>
+                </ul>
+
+                <h3>Action Buttons</h3>
+                <ul>
+                    <li><span class="btn-ref">Vars</span> Manage global environment variables used in <code>{{brackets}}</code>.</li>
+                    <li><span class="btn-ref">New</span> Create a new request path (e.g., <code>Folder > My API</code>).</li>
+                    <li><span class="btn-ref">Edit</span> Rename or move the selected request.</li>
+                    <li><span class="btn-ref">Copy</span> Quickly duplicate the selected request configuration.</li>
+                    <li><span class="btn-ref">Clear</span> (History Tab only) Wipe your entire request history.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="request">
+            <h2>2. Request Editor</h2>
+            <div class="feature-card">
+                <h3>The Toolbar</h3>
+                <ul>
+                    <li><span class="btn-ref">Save Changes</span> Persists Method, URL, Body, and Scripts to your local <code>.json</code> file.</li>
+                    <li><span class="btn-ref">Code Snippet</span> <span class="tag tag-new">New</span> Generates ready-to-use code for Go, Python, or JavaScript.</li>
+                    <li><strong>Method Selector:</strong> Choose between GET, POST, PUT, DELETE, and PATCH.</li>
+                    <li><strong>URL Input:</strong> Supports dynamic variables (e.g., <code>{{host}}/api/login</code>).</li>
+                </ul>
+
+                <h3>Configuration Tabs</h3>
+                <ul>
+                    <li><strong>Body:</strong> Supports <code>raw</code> (JSON/Text) and <code>x-www-form-urlencoded</code> modes.</li>
+                    <li><strong>Headers:</strong> Add custom key-value pairs for your request.</li>
+                    <li><strong>Mocks:</strong> <span class="tag tag-new">New</span> View saved mock responses for this specific path and see your local Mock URL.</li>
+                    <li><strong>Scripts:</strong> Write JavaScript to run <em>before</em> (Pre-request) or <em>after</em> (Post-request) the execution.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="response">
+            <h2>3. Response & Analysis</h2>
+            <div class="feature-card">
+                <h3>Analysis Tabs</h3>
+                <ul>
+                    <li><strong>Body:</strong> View the raw response. Includes a <strong>Filter Bar</strong> at the top—type <code>data.id</code> to drill into JSON instantly.</li>
+                    <li><strong>Headers:</strong> View all headers returned by the server.</li>
+                    <li><strong>Preview:</strong> <span class="tag tag-new">New</span> Renders HTML pages in an iframe or displays images directly.</li>
+                    <li><strong>Diff:</strong> <span class="tag tag-new">New</span> Compare your current response side-by-side with a saved <strong>Baseline</strong>.</li>
+                </ul>
+
+                <h3>Post-Execution Actions</h3>
+                <ul>
+                    <li><span class="btn-ref">Set as Baseline</span> Pins the current response as the reference point for the <strong>Diff</strong> view.</li>
+                    <li><span class="btn-ref">Save as Mock</span> Saves the current response body, status, and headers as a mock template.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="advanced">
+            <h2>4. Advanced Features</h2>
+            <div class="feature-card">
+                <h3>Mock Server</h3>
+                <p>To enable the local mock server, start PostIt with the <code>-mock</code> flag:</p>
+                <code>./postit.exe -ui web -mock</code>
+                <p>Once enabled, you can call <code>http://localhost:8080/mock/your-api-path</code> to receive your saved mock responses.</p>
+
+                <h3>Git-Friendly Storage</h3>
+                <p>PostIt saves every request as a separate, pretty-printed JSON file in the <code>output/</code> directory. This makes it easy to track changes in Git and collaborate with your team without proprietary cloud syncing.</p>
+            </div>
+        </section>
+
+        <footer style="margin-top: 60px; padding-bottom: 40px; text-align: center; color: var(--text-secondary); font-size: 12px;">
+            PostIt API Client &bull; Built for Developers
+        </footer>
+    </div>
+</body>
+</html>

@@ -102,7 +102,7 @@ func (m *Manager) LoadCache() map[string]models.RequestInfo {
 
 func (m *Manager) SaveSingleRequest(req models.RequestInfo) {
 	filename := getSafeFilename(req.Path)
-	data, _ := json.MarshalIndent(req, "", "  ")
+	data, _ := json.MarshalIndent(req, "", "    ")
 	ioutil.WriteFile(filepath.Join(m.OutputDir, filename), data, 0644)
 }
 
