@@ -1,6 +1,7 @@
 package models
 
 import (
+	"sort"
 	"strings"
 	"time"
 )
@@ -98,6 +99,7 @@ type MockResponse struct {
 	Body      string   `json:"body"`
 	Header    []Header `json:"header"`
 	Condition string   `json:"condition,omitempty"`
+	Delay     int      `json:"delay,omitempty"` // Delay in ms
 }
 
 type MockStat struct {
@@ -116,6 +118,11 @@ type RequestInfo struct {
 }
 
 func ReconstructItems(reqs []RequestInfo) []Item {
+	// Sort requests by absolute order first
+	sort.Slice(reqs, func(i, j int) bool {
+		return reqs[i].Order < reqs[j].Order
+	})
+
 	root := []Item{}
 	for _, req := range reqs {
 		parts := strings.Split(req.Path, " > ")
