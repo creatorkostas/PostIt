@@ -289,7 +289,27 @@ func (t *TUIApp) sendRequest() {
 		t.Processor.RunScripts(req.Events, "test", nil, nil, req.Request.Header)
 
 		// 2. Execute
+		startTime := time.Now()
 		body, headers, statusCode, statusText := t.Client.ExecuteRequest(req.Request)
+		duration := time.Since(startTime).Milliseconds()
+		
+		// Record History
+		go func() {
+			history := t.Storage.LoadHistory()
+			record := models.HistoryRecord{
+				Timestamp:       startTime,
+				Path:            req.Path,
+				Method:          req.Request.Method,
+				URL:             t.Processor.ResolveVariables(req.Request.URL.Raw),
+				StatusCode:      statusCode,
+				StatusText:      statusText,
+				Duration:        duration,
+				ResponseBody:    body,
+				ResponseHeaders: headers,
+			}
+			history = append(history, record)
+			t.Storage.SaveHistory(history)
+		}()
 		
 		t.App.QueueUpdateDraw(func() {
 			if statusCode == 0 {
