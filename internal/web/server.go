@@ -14,6 +14,7 @@ import (
 	"postit/internal/processor"
 	"postit/internal/storage"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tidwall/gjson"
@@ -30,6 +31,13 @@ type Server struct {
 	Collection models.Collection
 	FlatList   []models.RequestInfo
 	EnableMock bool
+	
+	// Mock Tracking
+	MockStats   map[string]*models.MockStat
+	mockMu      sync.Mutex
+
+	// WebSocket
+	WSClient *api.WSClient
 }
 
 func NewServer(store *storage.Manager, proc *processor.ScriptProcessor, client *api.Client, col models.Collection, flat []models.RequestInfo, enableMock bool) *Server {
@@ -41,6 +49,8 @@ func NewServer(store *storage.Manager, proc *processor.ScriptProcessor, client *
 		Collection: col,
 		FlatList:   flat,
 		EnableMock: enableMock,
+		MockStats:   make(map[string]*models.MockStat),
+		WSClient:   api.NewWSClient(),
 	}
 }
 
@@ -55,12 +65,15 @@ func (s *Server) Start(port int) error {
 	http.HandleFunc("/api/history", s.handleGetHistory)
 	http.HandleFunc("/api/history/clear", s.handleClearHistory)
 	http.HandleFunc("/api/history/delete", s.handleDeleteHistory)
+	http.HandleFunc("/api/history/export", s.handleExportHistory)
 	http.HandleFunc("/api/send", s.handleSendRequest)
 	http.HandleFunc("/api/hammer", s.handleHammerRequest)
 	http.HandleFunc("/api/hammer/history", s.handleGetHammerHistory)
 	http.HandleFunc("/api/sql", s.handleSQLRequest)
 	http.HandleFunc("/api/mock/save", s.handleSaveMockResponse)
+	http.HandleFunc("/api/mock/stats", s.handleMockStats)
 	http.HandleFunc("/api/import/curl", s.handleImportCurl)
+	http.HandleFunc("/api/import/openapi", s.handleImportOpenAPI)
 	http.HandleFunc("/api/docs/generate", s.handleGenerateDocs)
 	http.HandleFunc("/api/workflows", s.handleWorkflows)
 	http.HandleFunc("/api/workflows/run", s.handleRunWorkflow)
@@ -69,6 +82,10 @@ func (s *Server) Start(port int) error {
 	http.HandleFunc("/api/vault/unlock", s.handleUnlockVault)
 	http.HandleFunc("/api/vault/encrypt", s.handleVaultEncrypt)
 	http.HandleFunc("/api/vault/status", s.handleVaultStatus)
+	http.HandleFunc("/api/ws/connect", s.handleWSConnect)
+	http.HandleFunc("/api/ws/send", s.handleWSSend)
+	http.HandleFunc("/api/ws/messages", s.handleWSMessages)
+	http.HandleFunc("/api/ws/close", s.handleWSClose)
 	http.HandleFunc("/api/proxy/start", s.handleProxyStart)
 	http.HandleFunc("/api/proxy/stop", s.handleProxyStop)
 	http.HandleFunc("/api/proxy/status", s.handleProxyStatus)
@@ -209,6 +226,15 @@ func (s *Server) handleMockRequest(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Found a match
+			s.mockMu.Lock()
+			statKey := reqInfo.Path + " > " + mock.Name
+			if s.MockStats[statKey] == nil {
+				s.MockStats[statKey] = &models.MockStat{}
+			}
+			s.MockStats[statKey].Hits++
+			s.MockStats[statKey].LastAccess = time.Now()
+			s.mockMu.Unlock()
+
 			for _, h := range mock.Header {
 				w.Header().Add(h.Key, s.Processor.ResolveVariables(h.Value))
 			}
@@ -864,6 +890,36 @@ func (s *Server) handleImportCurl(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(newReq)
 }
 
+func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct {
+		JSON string `json:"json"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	requests, err := processor.ParseOpenAPI([]byte(input.JSON))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	for _, req := range requests {
+		req.Order = len(s.FlatList)
+		s.Storage.SaveSingleRequest(req)
+		s.FlatList = append(s.FlatList, req)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"count": len(requests)})
+}
+
 func (s *Server) handleGenerateDocs(w http.ResponseWriter, r *http.Request) {
 	var html strings.Builder
 	html.WriteString(`<!DOCTYPE html>
@@ -1092,5 +1148,75 @@ func javaTimeNow() int64 {
 
 func javaTimeFromMillis(ms int64) time.Time {
 	return time.Unix(0, ms*int64(time.Millisecond))
+}
+
+func (s *Server) handleMockStats(w http.ResponseWriter, r *http.Request) {
+	s.mockMu.Lock()
+	defer s.mockMu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.MockStats)
+}
+
+func (s *Server) handleWSConnect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct { URL string `json:"url"` }
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := s.WSClient.Connect(input.URL); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleWSSend(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct { Message string `json:"message"` }
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := s.WSClient.Send(input.Message); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleWSMessages(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.WSClient.GetMessages())
+}
+
+func (s *Server) handleWSClose(w http.ResponseWriter, r *http.Request) {
+	s.WSClient.Close()
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleExportHistory(w http.ResponseWriter, r *http.Request) {
+	history := s.Storage.LoadHistory()
+	data, err := processor.ExportToHAR(history)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=history.har")
+	w.Write(data)
 }
 

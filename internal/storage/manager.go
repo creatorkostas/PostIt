@@ -15,6 +15,8 @@ import (
 	"postit/internal/models"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
 
 type Manager struct {
@@ -30,6 +32,11 @@ type Manager struct {
 	Environments     []models.Environment
 	ActiveEnvID      string
 	VaultKey         []byte // AES-256 Key derived from password
+	
+	// Vault Auto-Lock
+	LastActivity     time.Time
+	AutoLockDuration time.Duration
+	vaultMu          sync.Mutex
 }
 
 func NewManager(outputDir string) *Manager {
@@ -44,7 +51,30 @@ func NewManager(outputDir string) *Manager {
 		VariableMap:      make(map[string]string),
 		GlobalHeaders:    []models.Header{},
 		Environments:     []models.Environment{},
+		AutoLockDuration: 15 * time.Minute, // Default auto-lock
 	}
+}
+
+func (m *Manager) StartVaultMonitor() {
+	go func() {
+		for {
+			time.Sleep(1 * time.Minute)
+			m.vaultMu.Lock()
+			if len(m.VaultKey) > 0 && !m.LastActivity.IsZero() {
+				if time.Since(m.LastActivity) > m.AutoLockDuration {
+					m.VaultKey = nil
+					fmt.Println(" [Vault] Auto-locked due to inactivity.")
+				}
+			}
+			m.vaultMu.Unlock()
+		}
+	}()
+}
+
+func (m *Manager) ResetVaultActivity() {
+	m.vaultMu.Lock()
+	defer m.vaultMu.Unlock()
+	m.LastActivity = time.Now()
 }
 
 func (m *Manager) LoadEnvironments() []models.Environment {
@@ -91,6 +121,7 @@ func (m *Manager) Init() error {
 	}
 	m.LoadVariables()
 	m.LoadGlobalHeaders()
+	m.StartVaultMonitor()
 	return nil
 }
 
@@ -168,10 +199,17 @@ func (m *Manager) DeleteRequestFile(path string) {
 
 func (m *Manager) SetVaultPassword(password string) {
 	hash := sha256.Sum256([]byte(password))
+	m.vaultMu.Lock()
 	m.VaultKey = hash[:]
+	m.LastActivity = time.Now()
+	m.vaultMu.Unlock()
 }
 
 func (m *Manager) Encrypt(plaintext string) (string, error) {
+	m.ResetVaultActivity()
+	m.vaultMu.Lock()
+	defer m.vaultMu.Unlock()
+
 	if len(m.VaultKey) == 0 {
 		return "", fmt.Errorf("Vault is locked")
 	}
@@ -192,6 +230,10 @@ func (m *Manager) Encrypt(plaintext string) (string, error) {
 }
 
 func (m *Manager) Decrypt(ciphertextStr string) (string, error) {
+	m.ResetVaultActivity()
+	m.vaultMu.Lock()
+	defer m.vaultMu.Unlock()
+
 	if len(m.VaultKey) == 0 {
 		return "", fmt.Errorf("Vault is locked")
 	}

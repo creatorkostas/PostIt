@@ -358,15 +358,34 @@
             <div id="tab-collections" class="tab active" onclick="switchSidebar('collections')"><i data-lucide="folder"></i> COLLECTIONS</div>
             <div id="tab-history" class="tab" onclick="switchSidebar('history')"><i data-lucide="history"></i> HISTORY</div>
             <div id="tab-workflows" class="tab" onclick="switchSidebar('workflows')"><i data-lucide="git-branch"></i> WORKFLOWS</div>
+            <div id="tab-ws" class="tab" onclick="switchSidebar('ws')"><i data-lucide="zap"></i> WS</div>
+            <div id="tab-mock" class="tab" onclick="switchSidebar('mock')"><i data-lucide="bar-chart-2"></i> MOCK</div>
         </div>
         <div id="sidebar-header">
             <span id="sidebar-title">COLLECTIONS</span>
-            <div id="history-actions" style="display: none;">
-                <button class="sidebar-action-btn" onclick="clearHistory()"><i data-lucide="trash-2"></i> Clear</button>
+            <div id="history-actions" style="display: none; gap: 8px;">
+                <button class="sidebar-action-btn" onclick="exportHAR()" title="Export HAR"><i data-lucide="download"></i> HAR</button>
+                <button class="sidebar-action-btn" onclick="clearHistory()" title="Clear History"><i data-lucide="trash-2"></i> Clear</button>
             </div>
         </div>
         <div id="collection-tree"></div>
         <div id="history-list" style="display: none;"></div>
+        <div id="ws-container" style="display: none; padding: 16px; flex: 1; flex-direction: column;">
+            <div class="form-group"><label>WebSocket URL</label><input type="text" id="ws-url" value="ws://localhost:8080"></div>
+            <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                <button class="btn-primary" id="ws-connect-btn" onclick="connectWS()">Connect</button>
+                <button class="btn-secondary" id="ws-disconnect-btn" onclick="closeWS()" style="display: none;">Disconnect</button>
+            </div>
+            <div id="ws-message-area" style="flex: 1; display: none; flex-direction: column;">
+                <div class="form-group"><label>Message</label><textarea id="ws-input" style="height: 100px; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: 4px; width: 100%; outline: none;"></textarea></div>
+                <button class="btn-primary" onclick="sendWS()">Send Message</button>
+                <div id="ws-log" style="margin-top: 16px; flex: 1; background: #000; padding: 12px; border-radius: 4px; font-family: monospace; font-size: 11px; overflow-y: auto;"></div>
+            </div>
+        </div>
+        <div id="mock-dashboard" style="display: none; padding: 16px; flex: 1; overflow-y: auto;">
+            <div style="font-size: 14px; font-weight: 700; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 8px;"><i data-lucide="bar-chart-2"></i> Mock Server Stats</div>
+            <div id="mock-stats-list"></div>
+        </div>
     </div>
 
     <div class="resizer-h" id="resizer-sidebar"></div>
@@ -382,6 +401,8 @@
                     <button class="sidebar-action-btn" onclick="addNode('wait')"><i data-lucide="clock"></i> Wait</button>
                     <button class="sidebar-action-btn" onclick="addNode('condition')"><i data-lucide="split"></i> If/Else</button>
                     <button class="sidebar-action-btn" onclick="addNode('loop')"><i data-lucide="rotate-ccw"></i> Loop</button>
+                    <button class="sidebar-action-btn" onclick="addNode('script')"><i data-lucide="code"></i> Script</button>
+                    <button class="sidebar-action-btn" onclick="addNode('input')"><i data-lucide="user"></i> Input</button>
                 </div>
                 <button class="btn-primary" onclick="runWorkflow()"><i data-lucide="play"></i> Run Workflow</button>
             </div>
@@ -557,11 +578,26 @@
     <div id="workflow-wait-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Add Wait Node</h3><div class="form-group"><label>Wait Time (ms)</label><input type="number" id="workflow-wait-time" value="1000"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('workflow-wait-modal')">Cancel</button><button class="btn-primary" id="workflow-wait-add-btn">Add to Canvas</button></div></div></div>
     <div id="workflow-cond-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Add Condition Node</h3><div class="form-group"><label>Condition (GJSON path, e.g. status == 'success')</label><input type="text" id="workflow-cond-expr"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('workflow-cond-modal')">Cancel</button><button class="btn-primary" id="workflow-cond-add-btn">Add to Canvas</button></div></div></div>
     <div id="workflow-loop-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Add Loop Node</h3><div class="form-group"><label>Loop Path (GJSON array)</label><input type="text" id="workflow-loop-path"></div><div class="form-group"><label>Max Iterations</label><input type="number" id="workflow-loop-max" value="10"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('workflow-loop-modal')">Cancel</button><button class="btn-primary" id="workflow-loop-add-btn">Add to Canvas</button></div></div></div>
+    <div id="workflow-script-modal" class="modal-overlay"><div class="modal" style="width:600px;"><h3 class="modal-title">Add Script Node</h3><div class="form-group"><label>JavaScript</label><textarea id="workflow-script-code" style="height:200px; background:var(--bg-input); border:1px solid var(--border-color); color:white; padding:12px; border-radius:4px; width:100%; outline:none; font-family:monospace;"></textarea></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('workflow-script-modal')">Cancel</button><button class="btn-primary" id="workflow-script-add-btn">Add to Canvas</button></div></div></div>
+    <div id="workflow-input-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Add Input Node</h3><div class="form-group"><label>Variable Name to wait for</label><input type="text" id="workflow-input-var" placeholder="e.g. otp_code"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('workflow-input-modal')">Cancel</button><button class="btn-primary" id="workflow-input-add-btn">Add to Canvas</button></div></div></div>
     <div id="node-edit-modal" class="modal-overlay">
 <div class="modal" style="width: 500px;"><h3 class="modal-title">Edit Node</h3><div id="node-edit-fields"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('node-edit-modal')">Cancel</button><button class="btn-primary" id="node-save-btn">Save Changes</button></div></div></div>
     <div id="environments-modal" class="modal-overlay"><div class="modal" style="width: 600px;"><h3 class="modal-title">Manage Environments</h3><div id="env-list" style="max-height: 400px; overflow-y: auto; margin-bottom: 16px;"></div><button class="btn-secondary" onclick="addNewEnvironment()">+ New Environment</button><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('environments-modal')">Close</button><button class="btn-primary" onclick="saveAllEnvironments()">Save All</button></div></div></div>
     <div id="search-modal" class="modal-overlay"><div class="modal" style="width: 500px; padding: 16px; border-radius: 8px;"><div class="form-group" style="margin-bottom: 0;"><input type="text" id="global-search-input" placeholder="Search requests (Ctrl+P)..." autocomplete="off" style="font-size: 16px; padding: 12px; border: none; background: transparent; border-bottom: 1px solid var(--border-color); border-radius: 0;"></div><div id="global-search-results" style="max-height: 300px; overflow-y: auto; margin-top: 8px;"></div></div></div>
-    <div id="import-modal" class="modal-overlay"><div class="modal" style="width: 600px;"><h3 class="modal-title">Import cURL</h3><div class="form-group"><label>Paste cURL command</label><textarea id="curl-input" style="height: 200px; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius); width: 100%; outline: none; font-family: monospace;"></textarea></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('import-modal')">Cancel</button><button class="btn-primary" onclick="importCurl()">Import</button></div></div></div>
+    <div id="import-modal" class="modal-overlay"><div class="modal" style="width: 600px;"><h3 class="modal-title">Import</h3>
+        <div class="tabs-container" style="margin-bottom: 20px; padding: 0;">
+            <div class="tab active" id="tab-import-curl" onclick="switchImportTab('curl')">cURL</div>
+            <div class="tab" id="tab-import-openapi" onclick="switchImportTab('openapi')">OpenAPI / Swagger</div>
+        </div>
+        <div id="import-curl-pane">
+            <div class="form-group"><label>Paste cURL command</label><textarea id="curl-input" style="height: 200px; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius); width: 100%; outline: none; font-family: monospace;"></textarea></div>
+            <div class="modal-actions"><button class="btn-secondary" onclick="closeModal('import-modal')">Cancel</button><button class="btn-primary" onclick="importCurl()">Import cURL</button></div>
+        </div>
+        <div id="import-openapi-pane" style="display: none;">
+            <div class="form-group"><label>Paste OpenAPI JSON Spec</label><textarea id="openapi-input" style="height: 200px; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius); width: 100%; outline: none; font-family: monospace;"></textarea></div>
+            <div class="modal-actions"><button class="btn-secondary" onclick="closeModal('import-modal')">Cancel</button><button class="btn-primary" onclick="importOpenAPI()">Import Spec</button></div>
+        </div>
+    </div></div>
     <div id="vault-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Unlock Vault</h3><div class="form-group"><label>Master Password</label><input type="password" id="vault-password"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('vault-modal')">Cancel</button><button class="btn-primary" onclick="unlockVault()">Unlock</button></div></div></div>
 
     <div id="context-menu">
@@ -743,25 +779,115 @@
 
         function switchSidebar(tab) {
             activeSidebar = tab;
-            document.getElementById('tab-collections').classList.toggle('active', tab === 'collections');
-            document.getElementById('tab-history').classList.toggle('active', tab === 'history');
-            document.getElementById('tab-workflows').classList.toggle('active', tab === 'workflows');
+            document.querySelectorAll('#sidebar-tabs .tab').forEach(t => t.classList.toggle('active', t.id === `tab-${tab}`));
             
             document.getElementById('collection-tree').style.display = (tab === 'collections' || tab === 'workflows') ? 'block' : 'none';
             document.getElementById('history-list').style.display = tab === 'history' ? 'block' : 'none';
             document.getElementById('history-actions').style.display = tab === 'history' ? 'block' : 'none';
+            document.getElementById('ws-container').style.display = tab === 'ws' ? 'flex' : 'none';
+            document.getElementById('mock-dashboard').style.display = tab === 'mock' ? 'block' : 'none';
             
             document.getElementById('sidebar-title').textContent = tab.toUpperCase();
             
             document.getElementById('workflow-view').style.display = tab === 'workflows' ? 'flex' : 'none';
-            document.getElementById('editor-wrapper').style.display = tab === 'workflows' ? 'none' : 'flex';
-            document.getElementById('resizer-response').style.display = tab === 'workflows' ? 'none' : 'block';
-            document.getElementById('response-container').style.display = tab === 'workflows' ? 'none' : 'flex';
+            document.getElementById('editor-wrapper').style.display = (tab === 'workflows' || tab === 'ws' || tab === 'mock') ? 'none' : 'flex';
+            document.getElementById('resizer-response').style.display = (tab === 'workflows' || tab === 'ws' || tab === 'mock') ? 'none' : 'block';
+            document.getElementById('response-container').style.display = (tab === 'workflows' || tab === 'ws' || tab === 'mock') ? 'none' : 'flex';
 
             if (tab === 'history') renderHistory();
             if (tab === 'workflows') renderWorkflows();
             if (tab === 'collections') init();
+            if (tab === 'mock') renderMockStats();
+            if (tab === 'ws') renderWS();
             lucide.createIcons();
+        }
+
+        // New Feature Functions
+        function switchImportTab(tab) {
+            document.getElementById('tab-import-curl').classList.toggle('active', tab === 'curl');
+            document.getElementById('tab-import-openapi').classList.toggle('active', tab === 'openapi');
+            document.getElementById('import-curl-pane').style.display = tab === 'curl' ? 'block' : 'none';
+            document.getElementById('import-openapi-pane').style.display = tab === 'openapi' ? 'block' : 'none';
+        }
+
+        async function importOpenAPI() {
+            const spec = document.getElementById('openapi-input').value;
+            try {
+                const resp = await fetch('/api/import/openapi', { method: 'POST', body: JSON.stringify({ json: spec }) });
+                const data = await resp.json();
+                showToast(`Imported ${data.count} requests!`, "success");
+                closeModal('import-modal');
+                init();
+            } catch (e) { showToast("Import failed: " + e.message, "error"); }
+        }
+
+        async function exportHAR() {
+            window.location.href = '/api/history/export';
+        }
+
+        async function renderMockStats() {
+            const list = document.getElementById('mock-stats-list');
+            list.innerHTML = 'Loading...';
+            try {
+                const resp = await fetch('/api/mock/stats');
+                const stats = await resp.json();
+                list.innerHTML = '';
+                Object.entries(stats).forEach(([key, stat]) => {
+                    const div = document.createElement('div');
+                    div.style = 'background: var(--bg-input); padding: 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--border-color);';
+                    div.innerHTML = `
+                        <div style="font-weight: 600; color: var(--text-main); font-size: 12px; margin-bottom: 4px;">${key}</div>
+                        <div style="display:flex; justify-content: space-between; font-size: 11px;">
+                            <span style="color: var(--accent);">Hits: ${stat.hits}</span>
+                            <span style="color: var(--text-secondary);">Last: ${new Date(stat.lastAccess).toLocaleTimeString()}</span>
+                        </div>
+                    `;
+                    list.appendChild(div);
+                });
+                if (Object.keys(stats).length === 0) list.innerHTML = '<div style="color:var(--text-secondary); font-style:italic;">No mock activity recorded.</div>';
+            } catch (e) { list.innerHTML = 'Error loading stats'; }
+        }
+
+        let wsPoll = null;
+        function renderWS() {
+            const area = document.getElementById('ws-message-area');
+            area.style.display = 'flex';
+            if (!wsPoll) wsPoll = setInterval(updateWSLog, 2000);
+            updateWSLog();
+        }
+
+        async function connectWS() {
+            const url = document.getElementById('ws-url').value;
+            const resp = await fetch('/api/ws/connect', { method: 'POST', body: JSON.stringify({ url }) });
+            if (resp.ok) {
+                document.getElementById('ws-connect-btn').style.display = 'none';
+                document.getElementById('ws-disconnect-btn').style.display = 'inline-block';
+                showToast("WebSocket Connected", "success");
+            } else { showToast("Connection Failed", "error"); }
+        }
+
+        async function sendWS() {
+            const msg = document.getElementById('ws-input').value;
+            const resp = await fetch('/api/ws/send', { method: 'POST', body: JSON.stringify({ message: msg }) });
+            if (resp.ok) { document.getElementById('ws-input').value = ''; updateWSLog(); }
+        }
+
+        async function updateWSLog() {
+            if (activeSidebar !== 'ws') return;
+            const resp = await fetch('/api/ws/messages');
+            const msgs = await resp.json();
+            const log = document.getElementById('ws-log');
+            log.innerHTML = msgs.map(m => {
+                let color = m.type === 'sent' ? '#4ade80' : (m.type === 'received' ? '#60a5fa' : '#f87171');
+                return `<div style="margin-bottom:4px;"><span style="color:var(--text-secondary)">[${new Date(m.timestamp).toLocaleTimeString()}]</span> <span style="color:${color}; font-weight:700;">${m.type.toUpperCase()}:</span> ${m.content}</div>`;
+            }).join('');
+            log.scrollTop = log.scrollHeight;
+        }
+
+        async function closeWS() {
+            await fetch('/api/ws/close', { method: 'POST' });
+            document.getElementById('ws-connect-btn').style.display = 'inline-block';
+            document.getElementById('ws-disconnect-btn').style.display = 'none';
         }
 
         let historyCache = [];
@@ -957,6 +1083,18 @@
                     pushNode(node); closeModal('workflow-loop-modal');
                 };
                 document.getElementById('workflow-loop-modal').classList.add('show');
+            } else if (type === 'script') {
+                document.getElementById('workflow-script-add-btn').onclick = () => {
+                    const node = { id: Date.now().toString(), type: 'script', script: document.getElementById('workflow-script-code').value, x: 100, y: 100 };
+                    pushNode(node); closeModal('workflow-script-modal');
+                };
+                document.getElementById('workflow-script-modal').classList.add('show');
+            } else if (type === 'input') {
+                document.getElementById('workflow-input-add-btn').onclick = () => {
+                    const node = { id: Date.now().toString(), type: 'input', variableName: document.getElementById('workflow-input-var').value, x: 100, y: 100 };
+                    pushNode(node); closeModal('workflow-input-modal');
+                };
+                document.getElementById('workflow-input-modal').classList.add('show');
             }
         }
 
@@ -986,6 +1124,8 @@
                 let color = "var(--bg-sidebar)";
                 if (node.type === 'wait') color = "#1e293b";
                 if (node.type === 'condition') color = "#312e81";
+                if (node.type === 'script') color = "#064e3b";
+                if (node.type === 'input') color = "#78350f";
                 rect.setAttribute("fill", color); rect.setAttribute("stroke", "var(--border-color)");
                 
                 const typeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -1001,6 +1141,8 @@
                 if (node.type === 'request') content = node.requestPath.split(' > ').pop();
                 else if (node.type === 'wait') content = node.waitTime + "ms";
                 else if (node.type === 'condition') content = node.condition;
+                else if (node.type === 'script') content = node.script.substring(0, 20) + "...";
+                else if (node.type === 'input') content = "Wait for: " + node.variableName;
                 mainText.textContent = content.length > 20 ? content.substring(0, 17) + "..." : content;
 
                 g.appendChild(rect); g.appendChild(typeText); g.appendChild(mainText);

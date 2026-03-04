@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"postit/internal/models"
+	"strings"
 	"time"
 
 	"github.com/tidwall/gjson"
@@ -99,6 +100,7 @@ func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.Reques
 			}
 
 		case "loop":
+			// ... existing loop code ...
 			lastBody := ""
 			if len(logs) > 0 {
 				lastBody = logs[len(logs)-1].Body
@@ -108,12 +110,11 @@ func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.Reques
 				log.Error = "Loop path is not an array"
 				outcome = "failure"
 			} else {
+				// ... loop items ...
 				items := array.Array()
 				max := currentNode.MaxIterations
 				if max <= 0 || max > len(items) { max = len(items) }
-				
 				log.StatusText = fmt.Sprintf("Looping %d items", max)
-				
 				var loopEntryID string
 				for _, e := range workflow.Edges {
 					if e.FromNode == currentNode.ID && e.Type == "loop_item" {
@@ -121,19 +122,29 @@ func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.Reques
 						break
 					}
 				}
-
 				if loopEntryID != "" {
 					for i := 0; i < max; i++ {
 						c.Storage.VariableMap["$item"] = items[i].Raw
-						subLogs, _ := c.RunWorkflow(workflow, requests, loopEntryID)
-						for _, sl := range subLogs {
-							sl.NodeID = fmt.Sprintf("%s [Iter %d] > %s", currentNode.ID, i, sl.NodeID)
-							logs = append(logs, sl)
-						}
+						c.RunWorkflow(workflow, requests, loopEntryID)
 					}
 				}
 				outcome = "success"
 			}
+
+		case "script":
+			// Execute JS
+			c.Processor.RunScripts([]models.Event{{Listen: "test", Script: models.Script{Exec: strings.Split(currentNode.Script, "\n")}}}, "test", nil, nil, nil)
+			log.StatusText = "Script Executed"
+			outcome = "success"
+
+		case "input":
+			// Pause workflow
+			workflow.Status = "paused"
+			workflow.WaitingFor = currentNode.VariableName
+			workflow.CurrentNode = currentNode.ID
+			log.StatusText = fmt.Sprintf("Paused, waiting for variable: %s", currentNode.VariableName)
+			logs = append(logs, log)
+			return logs, nil // Stop execution here
 		}
 
 		logs = append(logs, log)
