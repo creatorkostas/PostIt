@@ -143,9 +143,10 @@
         <section id="history">
             <h2>1. Request & Response History <span class="tag tag-new">New</span></h2>
             <div class="feature-card">
-                <h3>Persistent Snapshots</h3>
+                <h3>Persistent Snapshots & Ordering</h3>
                 <p>Every request sent via the Web UI, TUI, or CLI is now automatically recorded in the <strong>HISTORY</strong> tab with its full context.</p>
                 <ul>
+                    <li><strong>Absolute Ordering:</strong> Collections now maintain their exact import sequence. Whether loading from disk or importing a new Postman file, your requests stay exactly where you put them.</li>
                     <li><strong>Full Response Saving:</strong> Unlike traditional clients, PostIt saves the <strong>exact response body and headers</strong> for every historical call.</li>
                     <li><strong>Time Travel:</strong> Click any item in the History sidebar to instantly restore that specific response snapshot, even if the server's data has since changed.</li>
                     <li><strong>Metadata:</strong> Each record includes the precise timestamp, method, resolved URL, status code, and millisecond duration.</li>
@@ -254,6 +255,17 @@
                 <ul>
                     <li><strong>Dynamic Routing:</strong> Define paths like <code>/users/:id</code>. PostIt extracts <code>:id</code> and exposes it as a variable for the mock response.</li>
                     <li><strong>Conditional Mocks:</strong> Save multiple mocks for one route. Define a GJSON condition (e.g., <code>id == "5"</code>). The mock server evaluates the incoming request body and serves the correct dynamic response.</li>
+                    <li><strong>Simulated Latency <span class="tag tag-new">New</span>:</strong> Add a <code>Delay (ms)</code> to any mock to simulate slow network conditions or long-running operations.</li>
+                    <li><strong>Mock Management <span class="tag tag-new">New</span>:</strong> View and delete saved mocks directly from the <strong>Mocks</strong> tab in the request editor.</li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>Real-time Communication (WebSockets) <span class="tag tag-new">New</span></h3>
+                <p>Connect to and interact with WebSocket servers directly from the <strong>WS</strong> sidebar tab.</p>
+                <ul>
+                    <li><strong>Interactive Log:</strong> View incoming and outgoing messages with precise timestamps and color-coding.</li>
+                    <li><strong>Persistent Connection:</strong> Keep the connection open while you navigate other parts of the app.</li>
                 </ul>
             </div>
 
@@ -261,6 +273,7 @@
                 <h3>CLI Runner (CI/CD)</h3>
                 <p>Execute your collections entirely headlessly from the terminal for automation pipelines:</p>
                 <code>./postit.exe run --collection ./output/history.json --env ./output/environments.json --delay 500</code>
+                <p style="margin-top: 10px; font-size: 13px;">The CLI runner respects the <strong>Absolute Order</strong> of your collection, ensuring tests run in the exact sequence defined in your workspace.</p>
             </div>
         </section>
 

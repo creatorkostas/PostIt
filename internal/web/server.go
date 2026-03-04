@@ -71,6 +71,7 @@ func (s *Server) Start(port int) error {
 	http.HandleFunc("/api/hammer/history", s.handleGetHammerHistory)
 	http.HandleFunc("/api/sql", s.handleSQLRequest)
 	http.HandleFunc("/api/mock/save", s.handleSaveMockResponse)
+	http.HandleFunc("/api/mock/delete", s.handleDeleteMock)
 	http.HandleFunc("/api/mock/stats", s.handleMockStats)
 	http.HandleFunc("/api/import/curl", s.handleImportCurl)
 	http.HandleFunc("/api/import/openapi", s.handleImportOpenAPI)
@@ -148,12 +149,14 @@ func (s *Server) handleSaveMockResponse(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var input struct {
-		Path     string              `json:"path"`
-		Name     string              `json:"name"`
-		Code     int                 `json:"code"`
-		Status   string              `json:"status"`
-		Body     string              `json:"body"`
-		Headers  []models.Header     `json:"headers"`
+		Path      string              `json:"path"`
+		Name      string              `json:"name"`
+		Code      int                 `json:"code"`
+		Status    string              `json:"status"`
+		Body      string              `json:"body"`
+		Headers   []models.Header     `json:"headers"`
+		Condition string              `json:"condition"`
+		Delay     int                 `json:"delay"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -163,17 +166,52 @@ func (s *Server) handleSaveMockResponse(w http.ResponseWriter, r *http.Request) 
 	for i, req := range s.FlatList {
 		if req.Path == input.Path {
 			newMock := models.MockResponse{
-				Name:   input.Name,
-				Code:   input.Code,
-				Status: input.Status,
-				Body:   input.Body,
-				Header: input.Headers,
+				Name:      input.Name,
+				Code:      input.Code,
+				Status:    input.Status,
+				Body:      input.Body,
+				Header:    input.Headers,
+				Condition: input.Condition,
+				Delay:     input.Delay,
 			}
 			s.FlatList[i].Responses = append(s.FlatList[i].Responses, newMock)
 			s.Storage.SaveSingleRequest(s.FlatList[i])
 			
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(newMock)
+			return
+		}
+	}
+
+	http.Error(w, "Request not found", http.StatusNotFound)
+}
+
+func (s *Server) handleDeleteMock(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct {
+		Path     string `json:"path"`
+		MockName string `json:"mockName"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	for i, req := range s.FlatList {
+		if req.Path == input.Path {
+			newMocks := []models.MockResponse{}
+			for _, m := range req.Responses {
+				if m.Name != input.MockName {
+					newMocks = append(newMocks, m)
+				}
+			}
+			s.FlatList[i].Responses = newMocks
+			s.Storage.SaveSingleRequest(s.FlatList[i])
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 	}
@@ -234,6 +272,10 @@ func (s *Server) handleMockRequest(w http.ResponseWriter, r *http.Request) {
 			s.MockStats[statKey].Hits++
 			s.MockStats[statKey].LastAccess = time.Now()
 			s.mockMu.Unlock()
+
+			if mock.Delay > 0 {
+				time.Sleep(time.Duration(mock.Delay) * time.Millisecond)
+			}
 
 			for _, h := range mock.Header {
 				w.Header().Add(h.Key, s.Processor.ResolveVariables(h.Value))
@@ -910,10 +952,23 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, req := range requests {
-		req.Order = len(s.FlatList)
-		s.Storage.SaveSingleRequest(req)
-		s.FlatList = append(s.FlatList, req)
+	for _, fresh := range requests {
+		found := false
+		for i, existing := range s.FlatList {
+			if existing.Path == fresh.Path {
+				s.FlatList[i].Order = len(s.FlatList) // Or keep some other logic, but usually we want to append or reorder. 
+				// Actually, to follow user's request: "update the order in the existing requests if they match"
+				// Let's use an incrementing counter for imports to ensure they get a new sequence.
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			fresh.Order = len(s.FlatList)
+			s.FlatList = append(s.FlatList, fresh)
+		}
+		s.Storage.SaveSingleRequest(fresh)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
