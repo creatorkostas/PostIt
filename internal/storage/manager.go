@@ -15,6 +15,7 @@ type Manager struct {
 	VarsPath      string
 	HeadersPath   string
 	HistoryPath   string
+	WorkflowsPath string
 	VariableMap   map[string]string
 	GlobalHeaders []models.Header
 }
@@ -25,9 +26,23 @@ func NewManager(outputDir string) *Manager {
 		VarsPath:      filepath.Join(outputDir, "variables.json"),
 		HeadersPath:   filepath.Join(outputDir, "global_headers.json"),
 		HistoryPath:   filepath.Join(outputDir, "history.json"),
+		WorkflowsPath: filepath.Join(outputDir, "workflows.json"),
 		VariableMap:   make(map[string]string),
 		GlobalHeaders: []models.Header{},
 	}
+}
+
+func (m *Manager) LoadWorkflows() []models.Workflow {
+	var workflows []models.Workflow
+	if data, err := ioutil.ReadFile(m.WorkflowsPath); err == nil {
+		json.Unmarshal(data, &workflows)
+	}
+	return workflows
+}
+
+func (m *Manager) SaveWorkflows(workflows []models.Workflow) {
+	data, _ := json.MarshalIndent(workflows, "", "  ")
+	ioutil.WriteFile(m.WorkflowsPath, data, 0644)
 }
 
 func (m *Manager) Init() error {

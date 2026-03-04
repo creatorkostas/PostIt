@@ -162,6 +162,8 @@ type RequestInfo struct {
 	Responses []MockResponse `json:"responses,omitempty"`
 	Events    []Event        `json:"events,omitempty"`
 	Order     int            `json:"order"`
+	SQLQuery  string         `json:"sql_query,omitempty"`
+	DBPath    string         `json:"db_path,omitempty"`
 }
 
 func ReconstructItems(requests []RequestInfo) []Item {

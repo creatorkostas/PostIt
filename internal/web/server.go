@@ -48,7 +48,11 @@ func (s *Server) Start(port int) error {
 	http.HandleFunc("/api/history/clear", s.handleClearHistory)
 	http.HandleFunc("/api/history/delete", s.handleDeleteHistory)
 	http.HandleFunc("/api/send", s.handleSendRequest)
+	http.HandleFunc("/api/hammer", s.handleHammerRequest)
+	http.HandleFunc("/api/sql", s.handleSQLRequest)
 	http.HandleFunc("/api/mock/save", s.handleSaveMockResponse)
+	http.HandleFunc("/api/workflows", s.handleWorkflows)
+	http.HandleFunc("/api/workflows/run", s.handleRunWorkflow)
 	
 	if s.EnableMock {
 		http.HandleFunc("/mock/", s.handleMockRequest)
@@ -572,6 +576,127 @@ func (s *Server) handleSendRequest(w http.ResponseWriter, r *http.Request) {
 		"statusCode": statusCode,
 		"statusText": statusText,
 	})
+}
+
+func (s *Server) handleHammerRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct {
+		Path     string `json:"path"`
+		Workers  int    `json:"workers"`
+		Duration int    `json:"duration"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var target *models.RequestInfo
+	for _, req := range s.FlatList {
+		if req.Path == input.Path {
+			target = &req
+			break
+		}
+	}
+
+	if target == nil {
+		http.Error(w, "Request not found", http.StatusNotFound)
+		return
+	}
+
+	results := s.Client.Hammer(target.Request, input.Workers, time.Duration(input.Duration)*time.Second)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
+func (s *Server) handleSQLRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct {
+		Path   string `json:"path"`
+		DBPath string `json:"db_path"`
+		Query  string `json:"query"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Save SQL info to request if path provided
+	if input.Path != "" {
+		for i, req := range s.FlatList {
+			if req.Path == input.Path {
+				s.FlatList[i].DBPath = input.DBPath
+				s.FlatList[i].SQLQuery = input.Query
+				s.Storage.SaveSingleRequest(s.FlatList[i])
+				break
+			}
+		}
+	}
+
+	cols, rows, err := s.Client.ExecuteSQL(input.DBPath, input.Query)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"columns": cols,
+		"rows":    rows,
+	})
+}
+
+func (s *Server) handleWorkflows(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		workflows := s.Storage.LoadWorkflows()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(workflows)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var workflows []models.Workflow
+		if err := json.NewDecoder(r.Body).Decode(&workflows); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		s.Storage.SaveWorkflows(workflows)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+func (s *Server) handleRunWorkflow(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var workflow models.Workflow
+	if err := json.NewDecoder(r.Body).Decode(&workflow); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	logs, err := s.Client.RunWorkflow(&workflow, s.FlatList)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(logs)
 }
 
 // Helper to match JS Date.now()
