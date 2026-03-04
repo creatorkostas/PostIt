@@ -7,6 +7,8 @@ import (
 	"postit/internal/models"
 	"postit/internal/processor"
 	"postit/internal/storage"
+	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -58,7 +60,7 @@ func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.Reque
 	// Status/Info Area
 	t.Status = tview.NewTextView().SetDynamicColors(true)
 	t.Status.SetBorder(false)
-	t.Status.SetText(" [yellow]Tab[white]: Switch | [yellow]Ctrl+R[white]: Send | [yellow]Ctrl+N[white]: New | [yellow]Ctrl+D[white]: Duplicate | [yellow]Ctrl+M[white]: Move | [yellow]Alt+Up/Down[white]: Reorder | [yellow]Ctrl+C[white]: Exit")
+	t.Status.SetText(" [yellow]Tab[white]: Switch | [yellow]Ctrl+R[white]: Send | [yellow]Ctrl+H[white]: Hammer | [yellow]Ctrl+S[white]: SQL | [yellow]Ctrl+N[white]: New | [yellow]Ctrl+C[white]: Exit")
 
 	// Main Request Area
 	t.Main = tview.NewFlex().SetDirection(tview.FlexRow)
@@ -90,6 +92,16 @@ func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.Reque
 		case tcell.KeyCtrlR:
 			if t.CurrentReq != nil {
 				t.sendRequest()
+			}
+			return nil
+		case tcell.KeyCtrlH:
+			if t.CurrentReq != nil {
+				t.showHammer()
+			}
+			return nil
+		case tcell.KeyCtrlS:
+			if t.CurrentReq != nil {
+				t.showSQLEditor()
 			}
 			return nil
 		case tcell.KeyCtrlN:
@@ -235,10 +247,33 @@ func (t *TUIApp) sendRequest() {
 				statusColor = "yellow"
 			}
 			
-			t.Response.SetText(fmt.Sprintf(" [yellow]Status: [%s]%d %s[white]\n\n%s", statusColor, statusCode, statusText, display))
+			respContent := fmt.Sprintf(" [yellow]Status: [%s]%d %s[white]\n\n%s", statusColor, statusCode, statusText, display)
 			
 			// 3. Run post-request scripts
 			t.Processor.RunScripts(t.CurrentReq.Events, "test", []byte(body), headers, t.CurrentReq.Request.Header)
+
+			// 4. SQL Sidekick
+			if t.CurrentReq.SQLQuery != "" && t.CurrentReq.DBPath != "" {
+				cols, rows, err := t.Client.ExecuteSQL(t.CurrentReq.DBPath, t.CurrentReq.SQLQuery)
+				if err != nil {
+					respContent += fmt.Sprintf("\n\n [red]SQL Error: %v", err)
+				} else {
+					respContent += "\n\n [yellow]SQL Results:\n"
+					// Simple table view in text
+					for _, col := range cols {
+						respContent += fmt.Sprintf(" [blue]%-15s", col)
+					}
+					respContent += "[white]\n" + strings.Repeat("-", len(cols)*16) + "\n"
+					for _, row := range rows {
+						for _, val := range row {
+							respContent += fmt.Sprintf(" %-15s", val)
+						}
+						respContent += "\n"
+					}
+				}
+			}
+			
+			t.Response.SetText(respContent)
 		})
 	}()
 }
@@ -577,4 +612,132 @@ func (t *TUIApp) selectByPath(root *tview.TreeNode, path string) bool {
 		}
 	}
 	return false
+}
+
+func (t *TUIApp) showHammer() {
+	if t.CurrentReq == nil {
+		return
+	}
+
+	pages := tview.NewPages()
+	
+	// Layout
+	rightSide := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(t.Main, 0, 1, false).
+		AddItem(t.Response, 0, 1, false).
+		AddItem(t.Status, 1, 0, false)
+
+	mainLayout := tview.NewFlex().
+		AddItem(t.Tree, 35, 1, true).
+		AddItem(rightSide, 0, 3, false)
+
+	pages.AddPage("main", mainLayout, true, true)
+
+	form := tview.NewForm()
+	form.SetBorder(true).SetTitle(" Hammer (Load Testing) ").SetTitleAlign(tview.AlignLeft)
+
+	var workers int = 10
+	var duration int = 5 // seconds
+	form.AddInputField("Workers", "10", 10, tview.InputFieldInteger, func(text string) {
+		fmt.Sscanf(text, "%d", &workers)
+	})
+	form.AddInputField("Duration (sec)", "5", 10, tview.InputFieldInteger, func(text string) {
+		fmt.Sscanf(text, "%d", &duration)
+	})
+
+	form.AddButton("Start Hammering", func() {
+		t.Response.SetText(" [yellow]Hammering in progress...")
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+
+		go func() {
+			results := t.Client.Hammer(t.CurrentReq.Request, workers, time.Duration(duration)*time.Second)
+			
+			t.App.QueueUpdateDraw(func() {
+				resText := fmt.Sprintf(" [yellow]Hammer Results for %s[white]\n\n", t.CurrentReq.Path)
+				resText += fmt.Sprintf(" [blue]Total Requests:[white] %d\n", results.TotalRequests)
+				resText += fmt.Sprintf(" [green]Success Rate:  [white] %.2f%%\n", float64(results.SuccessCount)/float64(results.TotalRequests)*100)
+				resText += fmt.Sprintf(" [yellow]RPS:           [white] %.2f\n", results.RPS)
+				resText += fmt.Sprintf(" [blue]Avg Latency:   [white] %v\n\n", results.AverageLatency)
+				
+				resText += " [yellow]Status Codes:\n"
+				for code, count := range results.StatusCodes {
+					color := "green"
+					if code >= 400 { color = "red" }
+					resText += fmt.Sprintf("   [%s]%d:[white] %d\n", color, code, count)
+				}
+				
+				t.Response.SetText(resText)
+			})
+		}()
+	})
+	
+	form.AddButton("Cancel", func() {
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+	})
+
+	modal := tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(nil, 0, 1, false).
+			AddItem(form, 12, 1, true).
+			AddItem(nil, 0, 1, false), 50, 1, true).
+		AddItem(nil, 0, 1, false)
+
+	pages.AddPage("form", modal, true, true)
+	t.App.SetRoot(pages, true).SetFocus(form)
+}
+
+func (t *TUIApp) showSQLEditor() {
+	if t.CurrentReq == nil {
+		return
+	}
+
+	pages := tview.NewPages()
+	
+	// Layout
+	rightSide := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(t.Main, 0, 1, false).
+		AddItem(t.Response, 0, 1, false).
+		AddItem(t.Status, 1, 0, false)
+
+	mainLayout := tview.NewFlex().
+		AddItem(t.Tree, 35, 1, true).
+		AddItem(rightSide, 0, 3, false)
+
+	pages.AddPage("main", mainLayout, true, true)
+
+	form := tview.NewForm()
+	form.SetBorder(true).SetTitle(" SQL Sidekick ").SetTitleAlign(tview.AlignLeft)
+
+	form.AddInputField("DB Path (SQLite)", t.CurrentReq.DBPath, 60, nil, func(text string) {
+		t.CurrentReq.DBPath = text
+	})
+	form.AddInputField("SQL Query", t.CurrentReq.SQLQuery, 60, nil, func(text string) {
+		t.CurrentReq.SQLQuery = text
+	})
+
+	form.AddButton("Save", func() {
+		t.Storage.SaveSingleRequest(*t.CurrentReq)
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+		t.showRequest(t.CurrentReq) // Refresh view
+	})
+	
+	form.AddButton("Cancel", func() {
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+	})
+
+	modal := tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(nil, 0, 1, false).
+			AddItem(form, 12, 1, true).
+			AddItem(nil, 0, 1, false), 70, 1, true).
+		AddItem(nil, 0, 1, false)
+
+	pages.AddPage("form", modal, true, true)
+	t.App.SetRoot(pages, true).SetFocus(form)
 }
