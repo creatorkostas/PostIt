@@ -11,6 +11,7 @@ require (
 	github.com/go-resty/resty/v2 v2.17.2 // indirect
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/lib/pq v1.11.2 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect

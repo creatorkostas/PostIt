@@ -1,6 +1,9 @@
 package models
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 type Collection struct {
 	Info Info   `json:"info"`
@@ -95,6 +98,11 @@ type MockResponse struct {
 	Body      string   `json:"body"`
 	Header    []Header `json:"header"`
 	Condition string   `json:"condition,omitempty"`
+}
+
+type MockStat struct {
+	Hits       int       `json:"hits"`
+	LastAccess time.Time `json:"lastAccess"`
 }
 
 type RequestInfo struct {
