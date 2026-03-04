@@ -8,20 +8,22 @@ type Workflow struct {
 }
 
 type WorkflowNode struct {
-	ID          string    `json:"id"`
-	Type        string    `json:"type"` // "request", "wait", "condition"
-	RequestPath string    `json:"requestPath,omitempty"`
-	WaitTime    int       `json:"waitTime,omitempty"`    // in ms
-	Condition   string    `json:"condition,omitempty"`   // gjson path or expression
-	X           float64   `json:"x"`
-	Y           float64   `json:"y"`
-	Extracts    []Extract `json:"extracts,omitempty"`
+	ID            string    `json:"id"`
+	Type          string    `json:"type"` // "request", "wait", "condition", "loop"
+	RequestPath   string    `json:"requestPath,omitempty"`
+	WaitTime      int       `json:"waitTime,omitempty"`    // in ms
+	Condition     string    `json:"condition,omitempty"`   // gjson path
+	LoopPath      string    `json:"loopPath,omitempty"`    // gjson path to array
+	MaxIterations int       `json:"maxIterations,omitempty"`
+	X             float64   `json:"x"`
+	Y             float64   `json:"y"`
+	Extracts      []Extract `json:"extracts,omitempty"`
 }
 
 type WorkflowEdge struct {
 	FromNode string `json:"fromNode"`
 	ToNode   string `json:"toNode"`
-	Type     string `json:"type,omitempty"` // "success", "failure", "default"
+	Type     string `json:"type,omitempty"` // "success", "failure", "default", "error", "loop_item"
 }
 
 type Extract struct {

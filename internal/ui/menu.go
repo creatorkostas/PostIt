@@ -276,7 +276,7 @@ func (m *Menu) EditBody(reqInfo *models.RequestInfo) {
 	if reqInfo.Request.Body.Mode == "urlencoded" {
 		for {
 			options := []string{"Add New Field", "Finish Editing"}
-			for _, f := range reqInfo.Request.Body.Urlencoded {
+			for _, f := range reqInfo.Request.Body.UrlEncoded {
 				options = append(options, fmt.Sprintf("%s: %s", f.Key, f.Value))
 			}
 
@@ -291,14 +291,14 @@ func (m *Menu) EditBody(reqInfo *models.RequestInfo) {
 				survey.AskOne(&survey.Input{Message: "Key:"}, &key)
 				survey.AskOne(&survey.Input{Message: "Value:"}, &val)
 				if key != "" {
-					reqInfo.Request.Body.Urlencoded = append(reqInfo.Request.Body.Urlencoded, models.Urlencoded{Key: key, Value: val})
+					reqInfo.Request.Body.UrlEncoded = append(reqInfo.Request.Body.UrlEncoded, models.UrlEncoded{Key: key, Value: val})
 				}
 			} else {
-				for i, f := range reqInfo.Request.Body.Urlencoded {
+				for i, f := range reqInfo.Request.Body.UrlEncoded {
 					if fmt.Sprintf("%s: %s", f.Key, f.Value) == selected {
 						newVal := f.Value
 						survey.AskOne(&survey.Input{Message: "New value:", Default: f.Value}, &newVal)
-						reqInfo.Request.Body.Urlencoded[i].Value = newVal
+						reqInfo.Request.Body.UrlEncoded[i].Value = newVal
 						break
 					}
 				}
