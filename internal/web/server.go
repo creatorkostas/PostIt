@@ -26,6 +26,7 @@ type Server struct {
 	Storage    *storage.Manager
 	Processor  *processor.ScriptProcessor
 	Client     *api.Client
+	Proxy      *api.ProxyServer
 	Collection models.Collection
 	FlatList   []models.RequestInfo
 	EnableMock bool
@@ -36,6 +37,7 @@ func NewServer(store *storage.Manager, proc *processor.ScriptProcessor, client *
 		Storage:    store,
 		Processor:  proc,
 		Client:     client,
+		Proxy:      api.NewProxyServer(store),
 		Collection: col,
 		FlatList:   flat,
 		EnableMock: enableMock,
@@ -67,6 +69,9 @@ func (s *Server) Start(port int) error {
 	http.HandleFunc("/api/vault/unlock", s.handleUnlockVault)
 	http.HandleFunc("/api/vault/encrypt", s.handleVaultEncrypt)
 	http.HandleFunc("/api/vault/status", s.handleVaultStatus)
+	http.HandleFunc("/api/proxy/start", s.handleProxyStart)
+	http.HandleFunc("/api/proxy/stop", s.handleProxyStop)
+	http.HandleFunc("/api/proxy/status", s.handleProxyStatus)
 	
 	if s.EnableMock {
 		http.HandleFunc("/mock/", s.handleMockRequest)
@@ -920,6 +925,51 @@ func (s *Server) handleVaultEncrypt(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleVaultStatus(w http.ResponseWriter, r *http.Request) {
 	unlocked := len(s.Storage.VaultKey) > 0
 	json.NewEncoder(w).Encode(map[string]bool{"unlocked": unlocked})
+}
+
+func (s *Server) handleProxyStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct { Port int `json:"port"` }
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if input.Port == 0 { input.Port = 8081 }
+
+	if err := s.Proxy.Start(input.Port); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "Proxy started on port %d", input.Port)
+}
+
+func (s *Server) handleProxyStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := s.Proxy.Stop(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintln(w, "Proxy stopped")
+}
+
+func (s *Server) handleProxyStatus(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"running": s.Proxy.Running,
+		"port":    s.Proxy.Server.Addr, // This might be empty if stopped
+	})
 }
 
 // Helper to match JS Date.now()
