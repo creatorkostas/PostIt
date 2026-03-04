@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PostIt - Web Client</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --bg-app: #0d0d0f;
@@ -220,6 +221,7 @@
         <div id="sidebar-top-tools">
             <a href="/docs.html" target="_blank" class="sidebar-action-btn" style="text-decoration: none; flex: 1; text-align: center;" title="Documentation">Docs</a>
             <button class="sidebar-action-btn" style="flex: 1;" onclick="showVariablesModal()">Variables</button>
+            <button class="sidebar-action-btn" onclick="showImportModal()">Import</button>
             <button class="sidebar-action-btn" title="New Request" onclick="showNewModal()">+ New</button>
         </div>
         <div id="sidebar-search-container">
@@ -247,7 +249,11 @@
             <div id="workflow-toolbar" style="padding: 16px 24px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
                 <div style="display: flex; gap: 12px; align-items: center;">
                     <h2 id="workflow-title" style="margin: 0; font-size: 16px; font-weight: 600;">New Workflow</h2>
-                    <button class="btn-secondary" style="padding: 4px 12px;" onclick="saveWorkflow()">Save Workflow</button>
+                    <button class="btn-secondary" style="padding: 4px 12px;" onclick="saveWorkflow()">Save</button>
+                    <div style="width: 1px; height: 20px; background: var(--border-color); margin: 0 8px;"></div>
+                    <button class="sidebar-action-btn" onclick="addNode('request')">+ Request</button>
+                    <button class="sidebar-action-btn" onclick="addNode('wait')">+ Wait</button>
+                    <button class="sidebar-action-btn" onclick="addNode('condition')">+ If/Else</button>
                 </div>
                 <button class="btn-primary" onclick="runWorkflow()">Run Workflow</button>
             </div>
@@ -270,9 +276,20 @@
 
         <div id="editor-wrapper" style="flex: 1; display: flex; flex-direction: column; min-height: 100px;">
             <div id="request-header">
-                <div class="toolbar">
-                    <button class="btn-primary" onclick="saveCurrentRequest()">Save Changes</button>
-                    <button class="btn-secondary" onclick="showCodeModal()">Code Snippet</button>
+                <div class="toolbar" style="justify-content: space-between;">
+                    <div style="display: flex; gap: 12px;">
+                        <button class="btn-primary" onclick="saveCurrentRequest()">Save Changes</button>
+                        <button class="btn-secondary" onclick="showCodeModal()">Code Snippet</button>
+                    </div>
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <div id="env-selector-container" style="display: flex; align-items: center; gap: 8px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 4px; padding-left: 12px;">
+                            <span style="font-size: 11px; color: var(--text-secondary); font-weight: 700;">ENV</span>
+                            <select id="env-active-select" style="background: transparent; border: none; color: white; font-size: 12px; padding: 6px 12px; outline: none;" onchange="switchActiveEnv(this.value)">
+                                <option value="">No Environment</option>
+                            </select>
+                        </div>
+                        <button class="btn-secondary" onclick="showEnvironmentsModal()">Environments</button>
+                    </div>
                 </div>
                 <div class="url-bar-container">
                     <div id="req-method-display">GET</div>
@@ -319,18 +336,33 @@
                     <div id="mocks-list" style="overflow-y: auto; flex: 1;"></div>
                 </div>
                 <div id="pane-hammer" class="pane">
-                    <div style="padding: 16px; background: var(--bg-sidebar); border-radius: 8px; border: 1px solid var(--border-color);">
+                    <div style="padding: 16px; background: var(--bg-sidebar); border-radius: 8px; border: 1px solid var(--border-color); flex: 1; display: flex; flex-direction: column; overflow: hidden;">
                         <div style="font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 16px;">Hammer (Load Testing)</div>
-                        <div class="form-group"><label>Workers (Concurrency)</label><input type="number" id="hammer-workers" value="10"></div>
-                        <div class="form-group"><label>Duration (Seconds)</label><input type="number" id="hammer-duration" value="5"></div>
-                        <button class="btn-primary" onclick="runHammer()">Start Hammering</button>
-                        <div id="hammer-results" style="margin-top: 24px; font-family: monospace; font-size: 13px; color: var(--text-secondary); white-space: pre-wrap;"></div>
+                        <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+                            <div class="form-group" style="margin-bottom: 0; flex: 1;"><label>Workers</label><input type="number" id="hammer-workers" value="10"></div>
+                            <div class="form-group" style="margin-bottom: 0; flex: 1;"><label>Duration (Sec)</label><input type="number" id="hammer-duration" value="5"></div>
+                            <div style="display: flex; align-items: flex-end;"><button class="btn-primary" onclick="runHammer()">Start Hammering</button></div>
+                        </div>
+                        <div id="hammer-dashboard" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; display: none;">
+                            <div style="background: var(--bg-app); padding: 12px; border-radius: 6px; text-align: center;"><div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase;">Requests</div><div id="h-total" style="font-size: 18px; font-weight: 700; color: var(--accent);">0</div></div>
+                            <div style="background: var(--bg-app); padding: 12px; border-radius: 6px; text-align: center;"><div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase;">RPS</div><div id="h-rps" style="font-size: 18px; font-weight: 700; color: #4ade80;">0</div></div>
+                            <div style="background: var(--bg-app); padding: 12px; border-radius: 6px; text-align: center;"><div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase;">Avg Latency</div><div id="h-avg" style="font-size: 18px; font-weight: 700; color: #60a5fa;">0ms</div></div>
+                            <div style="background: var(--bg-app); padding: 12px; border-radius: 6px; text-align: center;"><div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase;">P99</div><div id="h-p99" style="font-size: 18px; font-weight: 700; color: #f87171;">0ms</div></div>
+                        </div>
+                        <div id="hammer-chart-container" style="flex: 1; min-height: 200px; position: relative; background: var(--bg-app); border-radius: 6px; padding: 12px; display: none;">
+                            <canvas id="hammer-chart"></canvas>
+                        </div>
+                        <div id="hammer-results" style="margin-top: 16px; font-family: monospace; font-size: 12px; color: var(--text-secondary); white-space: pre-wrap; overflow-y: auto;"></div>
                     </div>
                 </div>
                 <div id="pane-sql" class="pane">
                     <div style="padding: 16px; background: var(--bg-sidebar); border-radius: 8px; border: 1px solid var(--border-color); flex: 1; display: flex; flex-direction: column;">
                         <div style="font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 16px;">SQL Sidekick (SQLite)</div>
-                        <div class="form-group"><label>DB Path</label><input type="text" id="sql-db-path" placeholder="C:/path/to/db.sqlite"></div>
+                        <div class="form-group"><label>DB Path (SQLite / Postgres / MySQL)</label><input type="text" id="sql-db-path" placeholder="C:/path/to/db.sqlite or postgres://user:pass@host/db"></div>
+                        <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+                            <div class="form-group" style="margin-bottom: 0; flex: 1;"><label>Extract to Var</label><input type="text" id="sql-target-var" placeholder="e.g. user_id"></div>
+                            <div class="form-group" style="margin-bottom: 0; flex: 1;"><label>From Column</label><input type="text" id="sql-target-col" placeholder="e.g. id"></div>
+                        </div>
                         <div class="form-group" style="flex: 1; display: flex; flex-direction: column;"><label>SQL Query</label><textarea id="sql-query" style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius); resize: none; outline: none; font-family: monospace;"></textarea></div>
                         <div style="margin-top: 16px;"><button class="btn-primary" onclick="runSQL()">Execute Query</button></div>
                         <div id="sql-results" style="margin-top: 24px; flex: 1; overflow: auto; border-top: 1px solid var(--border-color); padding-top: 16px;"></div>
@@ -385,7 +417,13 @@
     <div id="edit-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Edit Request</h3><div class="form-group"><label>Path</label><input type="text" id="edit-path"></div><div class="form-group"><label>Method</label><select id="edit-method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select></div><div class="form-group"><label>URL</label><input type="text" id="edit-url"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('edit-modal')">Cancel</button><button class="btn-primary" onclick="saveEditRequest()">Update</button></div></div></div>
     <div id="variables-modal" class="modal-overlay"><div class="modal" style="width: 520px;"><h3 class="modal-title">Variables</h3><div id="variables-list" style="max-height: 320px; overflow-y: auto; margin-bottom: 16px;"></div><button class="sidebar-action-btn" onclick="addVariableRow()">+ Add Variable</button><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('variables-modal')">Cancel</button><button class="btn-primary" onclick="saveVariables()">Save</button></div></div></div>
     <div id="code-modal" class="modal-overlay"><div class="modal" style="width: 640px;"><h3 class="modal-title">Snippet</h3><div class="form-group"><label>Language</label><select id="snippet-lang" onchange="generateSnippet(this.value)"><option value="javascript">JavaScript</option><option value="go">Go</option><option value="python">Python</option></select></div><textarea id="snippet-output" style="height: 320px; font-size: 12px; background: #000;" readonly></textarea><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('code-modal')">Close</button><button class="btn-primary" onclick="copySnippet()">Copy</button></div></div></div>
-    <div id="workflow-node-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Add Request to Workflow</h3><div class="form-group"><label>Select Request</label><select id="workflow-request-select"></select></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('workflow-node-modal')">Cancel</button><button class="btn-primary" id="workflow-node-add-btn">Add to Canvas</button></div></div></div>
+    <div id="workflow-node-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Add Request Node</h3><div class="form-group"><label>Select Request</label><select id="workflow-request-select"></select></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('workflow-node-modal')">Cancel</button><button class="btn-primary" id="workflow-node-add-btn">Add to Canvas</button></div></div></div>
+    <div id="workflow-wait-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Add Wait Node</h3><div class="form-group"><label>Wait Time (ms)</label><input type="number" id="workflow-wait-time" value="1000"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('workflow-wait-modal')">Cancel</button><button class="btn-primary" id="workflow-wait-add-btn">Add to Canvas</button></div></div></div>
+    <div id="workflow-cond-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Add Condition Node</h3><div class="form-group"><label>Condition (GJSON path, e.g. status == 'success')</label><input type="text" id="workflow-cond-expr"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('workflow-cond-modal')">Cancel</button><button class="btn-primary" id="workflow-cond-add-btn">Add to Canvas</button></div></div></div>
+    <div id="node-edit-modal" class="modal-overlay"><div class="modal" style="width: 500px;"><h3 class="modal-title">Edit Node</h3><div id="node-edit-fields"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('node-edit-modal')">Cancel</button><button class="btn-primary" id="node-save-btn">Save Changes</button></div></div></div>
+    <div id="environments-modal" class="modal-overlay"><div class="modal" style="width: 600px;"><h3 class="modal-title">Manage Environments</h3><div id="env-list" style="max-height: 400px; overflow-y: auto; margin-bottom: 16px;"></div><button class="btn-secondary" onclick="addNewEnvironment()">+ New Environment</button><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('environments-modal')">Close</button><button class="btn-primary" onclick="saveAllEnvironments()">Save All</button></div></div></div>
+    <div id="search-modal" class="modal-overlay"><div class="modal" style="width: 500px; padding: 16px; border-radius: 8px;"><div class="form-group" style="margin-bottom: 0;"><input type="text" id="global-search-input" placeholder="Search requests (Ctrl+P)..." autocomplete="off" style="font-size: 16px; padding: 12px; border: none; background: transparent; border-bottom: 1px solid var(--border-color); border-radius: 0;"></div><div id="global-search-results" style="max-height: 300px; overflow-y: auto; margin-top: 8px;"></div></div></div>
+    <div id="import-modal" class="modal-overlay"><div class="modal" style="width: 600px;"><h3 class="modal-title">Import cURL</h3><div class="form-group"><label>Paste cURL command</label><textarea id="curl-input" style="height: 200px; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius); width: 100%; outline: none; font-family: monospace;"></textarea></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('import-modal')">Cancel</button><button class="btn-primary" onclick="importCurl()">Import</button></div></div></div>
 
     <div id="context-menu">
         <div class="context-menu-item" onclick="moveSelected('up')">Move Up</div>
@@ -669,45 +707,146 @@
             });
         }
 
-        document.getElementById('workflow-svg').onclick = (e) => {
-            if (!currentWorkflow || e.target.id !== 'workflow-svg') return;
-            
-            const select = document.getElementById('workflow-request-select');
-            select.innerHTML = '';
-            flatRequests.forEach(req => {
-                const opt = document.createElement('option');
-                opt.value = req.path;
-                opt.textContent = req.path;
-                select.appendChild(opt);
-            });
-
-            const rect = e.currentTarget.getBoundingClientRect();
-            const clickX = e.clientX - rect.left;
-            const clickY = e.clientY - rect.top;
-
-            document.getElementById('workflow-node-add-btn').onclick = () => {
-                const path = select.value;
-                if (!path) return;
-                
-                const newNode = {
-                    id: Date.now().toString(),
-                    requestPath: path,
-                    x: clickX - 90,
-                    y: clickY - 25
+        function addNode(type) {
+            if (!currentWorkflow) return alert("Select a workflow first");
+            if (type === 'request') {
+                const select = document.getElementById('workflow-request-select');
+                select.innerHTML = '';
+                flatRequests.forEach(req => { const opt = document.createElement('option'); opt.value = req.path; opt.textContent = req.path; select.appendChild(opt); });
+                document.getElementById('workflow-node-add-btn').onclick = () => {
+                    const node = { id: Date.now().toString(), type: 'request', requestPath: select.value, x: 100, y: 100, extracts: [] };
+                    pushNode(node); closeModal('workflow-node-modal');
                 };
-                
-                if (currentWorkflow.nodes.length > 0) {
-                    const last = currentWorkflow.nodes[currentWorkflow.nodes.length-1];
-                    currentWorkflow.edges.push({ fromNode: last.id, toNode: newNode.id });
-                }
-                
-                currentWorkflow.nodes.push(newNode);
-                renderCanvas();
-                closeModal('workflow-node-modal');
-            };
+                document.getElementById('workflow-node-modal').classList.add('show');
+            } else if (type === 'wait') {
+                document.getElementById('workflow-wait-add-btn').onclick = () => {
+                    const node = { id: Date.now().toString(), type: 'wait', waitTime: parseInt(document.getElementById('workflow-wait-time').value), x: 100, y: 100 };
+                    pushNode(node); closeModal('workflow-wait-modal');
+                };
+                document.getElementById('workflow-wait-modal').classList.add('show');
+            } else if (type === 'condition') {
+                document.getElementById('workflow-cond-add-btn').onclick = () => {
+                    const node = { id: Date.now().toString(), type: 'condition', condition: document.getElementById('workflow-cond-expr').value, x: 100, y: 100 };
+                    pushNode(node); closeModal('workflow-cond-modal');
+                };
+                document.getElementById('workflow-cond-modal').classList.add('show');
+            }
+        }
 
-            document.getElementById('workflow-node-modal').classList.add('show');
-        };
+        function pushNode(node) {
+            if (currentWorkflow.nodes.length > 0) {
+                const last = currentWorkflow.nodes[currentWorkflow.nodes.length - 1];
+                currentWorkflow.edges.push({ fromNode: last.id, toNode: node.id, type: 'default' });
+            }
+            currentWorkflow.nodes.push(node);
+            renderCanvas();
+        }
+
+        function renderCanvas() {
+            if (!currentWorkflow) return;
+            const nodeG = document.getElementById('workflow-nodes');
+            const edgeG = document.getElementById('workflow-edges');
+            nodeG.innerHTML = ''; edgeG.innerHTML = '';
+
+            currentWorkflow.nodes.forEach(node => {
+                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                g.setAttribute("transform", `translate(${node.x}, ${node.y})`);
+                g.style.cursor = "move";
+
+                const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                rect.setAttribute("width", "180"); rect.setAttribute("height", "60");
+                rect.setAttribute("rx", "8");
+                let color = "var(--bg-sidebar)";
+                if (node.type === 'wait') color = "#1e293b";
+                if (node.type === 'condition') color = "#312e81";
+                rect.setAttribute("fill", color); rect.setAttribute("stroke", "var(--border-color)");
+                
+                const typeText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                typeText.setAttribute("x", "10"); typeText.setAttribute("y", "20");
+                typeText.setAttribute("fill", "var(--text-secondary)"); typeText.setAttribute("font-size", "10");
+                typeText.setAttribute("font-weight", "800");
+                typeText.textContent = node.type.toUpperCase();
+
+                const mainText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                mainText.setAttribute("x", "10"); mainText.setAttribute("y", "40");
+                mainText.setAttribute("fill", "white"); mainText.setAttribute("font-size", "12");
+                let content = "";
+                if (node.type === 'request') content = node.requestPath.split(' > ').pop();
+                else if (node.type === 'wait') content = node.waitTime + "ms";
+                else if (node.type === 'condition') content = node.condition;
+                mainText.textContent = content.length > 20 ? content.substring(0, 17) + "..." : content;
+
+                g.appendChild(rect); g.appendChild(typeText); g.appendChild(mainText);
+                
+                g.onmousedown = (e) => {
+                    e.stopPropagation();
+                    let startX = e.clientX; let startY = e.clientY;
+                    const onMove = (me) => {
+                        node.x += (me.clientX - startX); node.y += (me.clientY - startY);
+                        startX = me.clientX; startY = me.clientY; renderCanvas();
+                    };
+                    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+                    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+                };
+
+                g.ondblclick = () => editNode(node);
+                nodeG.appendChild(g);
+            });
+            
+            currentWorkflow.edges.forEach(edge => {
+                const from = currentWorkflow.nodes.find(n => n.id === edge.fromNode);
+                const to = currentWorkflow.nodes.find(n => n.id === edge.toNode);
+                if (from && to) {
+                    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                    line.setAttribute("x1", from.x + 180); line.setAttribute("y1", from.y + 30);
+                    line.setAttribute("x2", to.x); line.setAttribute("y2", to.y + 30);
+                    line.setAttribute("stroke", edge.type === 'failure' ? "var(--method-delete)" : "var(--text-secondary)");
+                    line.setAttribute("stroke-width", "2"); line.setAttribute("marker-end", "url(#arrowhead)");
+                    edgeG.appendChild(line);
+                }
+            });
+        }
+
+        function editNode(node) {
+            const fields = document.getElementById('node-edit-fields');
+            fields.innerHTML = `
+                <div class="form-group"><label>X Position</label><input type="number" id="edit-node-x" value="${node.x}"></div>
+                <div class="form-group"><label>Y Position</label><input type="number" id="edit-node-y" value="${node.y}"></div>
+            `;
+            if (node.type === 'request') {
+                fields.innerHTML += `<div class="form-group"><label>Extracts (Source Path : Target Var)</label><div id="node-extracts-list"></div><button class="sidebar-action-btn" onclick="addNodeExtractRow()">+ Add Extract</button></div>`;
+                const list = fields.querySelector('#node-extracts-list');
+                (node.extracts || []).forEach(ex => list.appendChild(createExtractRow(ex.sourcePath, ex.targetVar)));
+            } else if (node.type === 'wait') {
+                fields.innerHTML += `<div class="form-group"><label>Wait Time (ms)</label><input type="number" id="edit-node-wait" value="${node.waitTime}"></div>`;
+            } else if (node.type === 'condition') {
+                fields.innerHTML += `<div class="form-group"><label>Condition (GJSON)</label><input type="text" id="edit-node-cond" value="${node.condition}"></div>`;
+            }
+
+            document.getElementById('node-save-btn').onclick = () => {
+                node.x = parseInt(document.getElementById('edit-node-x').value);
+                node.y = parseInt(document.getElementById('edit-node-y').value);
+                if (node.type === 'request') {
+                    node.extracts = Array.from(fields.querySelectorAll('.header-row')).map(row => ({ sourcePath: row.querySelector('.ex-source').value, targetVar: row.querySelector('.ex-target').value })).filter(ex => ex.sourcePath !== '');
+                } else if (node.type === 'wait') {
+                    node.waitTime = parseInt(document.getElementById('edit-node-wait').value);
+                } else if (node.type === 'condition') {
+                    node.condition = document.getElementById('edit-node-cond').value;
+                }
+                renderCanvas(); closeModal('node-edit-modal');
+            };
+            document.getElementById('node-edit-modal').classList.add('show');
+        }
+
+        function createExtractRow(s, t) {
+            const row = document.createElement('div'); row.className = 'header-row';
+            row.innerHTML = `<input type="text" class="ex-source" value="${s}" placeholder="data.id"><input type="text" class="ex-target" value="${t}" placeholder="user_id"><button class="sidebar-action-btn" onclick="this.parentElement.remove()">✕</button>`;
+            return row;
+        }
+        function addNodeExtractRow() { document.getElementById('node-extracts-list').appendChild(createExtractRow('', '')); }
+
+        // Remove old simple click handler
+        document.getElementById('workflow-svg').onclick = null;
 
         async function saveWorkflows() { await fetch('/api/workflows', { method: 'POST', body: JSON.stringify(workflows) }); }
         function saveWorkflow() { saveWorkflows(); alert("Workflow saved!"); }
@@ -732,26 +871,57 @@
             } catch (e) { logsCont.innerHTML = `<div style="color:var(--method-delete)">Error: ${e.message}</div>`; }
         }
 
+        let hammerChart = null;
+
         async function runHammer() {
             if (!currentRequest) return alert("Select a request first");
             const workers = document.getElementById('hammer-workers').value;
             const duration = document.getElementById('hammer-duration').value;
             const resultsDiv = document.getElementById('hammer-results');
+            const dashboard = document.getElementById('hammer-dashboard');
+            const chartCont = document.getElementById('hammer-chart-container');
+            
             resultsDiv.textContent = "Hammering in progress...";
+            dashboard.style.display = 'grid';
+            chartCont.style.display = 'block';
+
+            if (hammerChart) hammerChart.destroy();
+            const ctx = document.getElementById('hammer-chart').getContext('2d');
+            hammerChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: 'RPS', data: [], borderColor: '#4ade80', tension: 0.4 }, { label: 'Avg Latency (ms)', data: [], borderColor: '#60a5fa', tension: 0.4 }] },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { color: '#26262a' } }, x: { grid: { display: false } } }, plugins: { legend: { labels: { color: '#a1a1aa', font: { size: 10 } } } } }
+            });
+
             try {
                 const resp = await fetch('/api/hammer', { method: 'POST', body: JSON.stringify({ path: currentRequest.path, workers: parseInt(workers), duration: parseInt(duration) }) });
                 const data = await resp.json();
-                resultsDiv.innerHTML = `Total Requests: ${data.TotalRequests}\nSuccess: ${data.SuccessCount}\nFailure: ${data.FailureCount}\nAvg Latency: ${(data.AverageLatency / 1000000).toFixed(2)}ms\nRPS: ${data.RPS.toFixed(2)}\nStatus Codes: ${JSON.stringify(data.StatusCodes, null, 2)}`;
+                
+                document.getElementById('h-total').textContent = data.TotalRequests;
+                document.getElementById('h-rps').textContent = data.RPS.toFixed(1);
+                document.getElementById('h-avg').textContent = (data.AverageLatency / 1000000).toFixed(1) + 'ms';
+                document.getElementById('h-p99').textContent = (data.P99Latency / 1000000).toFixed(1) + 'ms';
+
+                // For now, since the backend returns all at once, we simulate the "live" part by drawing the final state
+                // In a real live setup, we'd poll status during execution
+                hammerChart.data.labels = Array.from({length: 10}, (_, i) => i + 1);
+                hammerChart.data.datasets[0].data = Array(10).fill(data.RPS);
+                hammerChart.data.datasets[1].data = Array(10).fill(data.AverageLatency / 1000000);
+                hammerChart.update();
+
+                resultsDiv.innerHTML = `Total Requests: ${data.TotalRequests}\nSuccess: ${data.SuccessCount}\nFailure: ${data.FailureCount}\nAvg Latency: ${(data.AverageLatency / 1000000).toFixed(2)}ms\nP95 Latency: ${(data.P95Latency / 1000000).toFixed(2)}ms\nP99 Latency: ${(data.P99Latency / 1000000).toFixed(2)}ms\nRPS: ${data.RPS.toFixed(2)}\nStatus Codes: ${JSON.stringify(data.StatusCodes, null, 2)}`;
             } catch (e) { resultsDiv.textContent = "Error: " + e.message; }
         }
 
         async function runSQL() {
             const dbPath = document.getElementById('sql-db-path').value;
             const query = document.getElementById('sql-query').value;
+            const targetVar = document.getElementById('sql-target-var').value;
+            const targetCol = document.getElementById('sql-target-col').value;
             const resultsDiv = document.getElementById('sql-results');
             resultsDiv.textContent = "Executing...";
             try {
-                const resp = await fetch('/api/sql', { method: 'POST', body: JSON.stringify({ path: currentRequest ? currentRequest.path : "", db_path: dbPath, query: query }) });
+                const resp = await fetch('/api/sql', { method: 'POST', body: JSON.stringify({ path: currentRequest ? currentRequest.path : "", db_path: dbPath, query: query, targetVar, targetCol }) });
                 if (!resp.ok) throw new Error(await resp.text());
                 const data = await resp.json();
                 let html = '<table style="width:100%; border-collapse:collapse; font-size:12px;"><thead><tr style="border-bottom:1px solid var(--border-color);">';
@@ -991,7 +1161,192 @@
             if (resp.ok) { closeModal('new-modal'); init(); }
         }
 
+        async function fetchActiveEnv() {
+            const r = await fetch('/api/environments/active');
+            const data = await r.json();
+            document.getElementById('env-active-select').value = data.id || '';
+        }
+
+        async function fetchEnvironments() {
+            const r = await fetch('/api/environments');
+            const envs = await r.json() || [];
+            renderActiveEnvSelect(envs);
+            return envs;
+        }
+
+        function renderActiveEnvSelect(envs) {
+            const select = document.getElementById('env-active-select');
+            const current = select.value;
+            select.innerHTML = '<option value="">No Environment</option>';
+            envs.forEach(e => {
+                const opt = document.createElement('option');
+                opt.value = e.id; opt.textContent = e.name;
+                select.appendChild(opt);
+            });
+            select.value = current;
+        }
+
+        async function switchActiveEnv(id) {
+            await fetch('/api/environments/active', { method: 'POST', body: JSON.stringify({ id }) });
+        }
+
+        async function showEnvironmentsModal() {
+            const envs = await fetchEnvironments();
+            const list = document.getElementById('env-list');
+            list.innerHTML = '';
+            envs.forEach(env => renderEnvEditor(env));
+            document.getElementById('environments-modal').classList.add('show');
+        }
+
+        function renderEnvEditor(env) {
+            const container = document.getElementById('env-list');
+            const div = document.createElement('div');
+            div.className = 'env-container';
+            div.style = 'border: 1px solid var(--border-color); padding: 16px; border-radius: 8px; margin-bottom: 16px; background: var(--bg-app);';
+            div.dataset.id = env.id;
+            
+            div.innerHTML = `
+                <div style="display:flex; gap:12px; margin-bottom:12px;">
+                    <input type="text" class="env-name" value="${env.name}" style="font-weight:700; color:var(--accent);">
+                    <button class="sidebar-action-btn" style="color:var(--method-delete)" onclick="this.parentElement.parentElement.remove()">Delete Env</button>
+                </div>
+                <div class="env-vars-list"></div>
+                <button class="sidebar-action-btn" style="margin-top:8px;" onclick="addEnvVarRow(this.previousElementSibling)">+ Add Variable</button>
+            `;
+            
+            const varList = div.querySelector('.env-vars-list');
+            Object.entries(env.variables || {}).forEach(([k,v]) => {
+                varList.appendChild(createEnvVarRow(k, v));
+            });
+            
+            container.appendChild(div);
+        }
+
+        function createEnvVarRow(k, v) {
+            const row = document.createElement('div');
+            row.className = 'header-row';
+            row.innerHTML = `<input type="text" class="env-var-key" value="${k}" placeholder="Key"><input type="text" class="env-var-value" value="${v}" placeholder="Value"><button class="sidebar-action-btn" onclick="this.parentElement.remove()">✕</button>`;
+            return row;
+        }
+
+        function addEnvVarRow(container) {
+            container.appendChild(createEnvVarRow('', ''));
+        }
+
+        function addNewEnvironment() {
+            renderEnvEditor({ id: Date.now().toString(), name: 'New Environment', variables: {} });
+        }
+
+        async function saveAllEnvironments() {
+            const envs = [];
+            document.querySelectorAll('#env-list .env-container').forEach(envDiv => {
+                const env = {
+                    id: envDiv.dataset.id,
+                    name: envDiv.querySelector('.env-name').value,
+                    variables: {}
+                };
+                envDiv.querySelectorAll('.header-row').forEach(row => {
+                    const k = row.querySelector('.env-var-key').value;
+                    if (k) env.variables[k] = row.querySelector('.env-var-value').value;
+                });
+                envs.push(env);
+            });
+            
+            const resp = await fetch('/api/environments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(envs) });
+            if (resp.ok) {
+                renderActiveEnvSelect(envs);
+                alert("All environments saved!");
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                const modal = document.getElementById('search-modal');
+                modal.classList.add('show');
+                const input = document.getElementById('global-search-input');
+                input.value = '';
+                input.focus();
+                renderSearchResults('');
+            }
+            if (e.key === 'Escape') {
+                closeModal('search-modal');
+                closeModal('new-modal');
+                closeModal('duplicate-modal');
+                closeModal('edit-modal');
+                closeModal('variables-modal');
+                closeModal('code-modal');
+                closeModal('workflow-node-modal');
+                closeModal('environments-modal');
+            }
+        });
+
+        document.getElementById('global-search-input').oninput = (e) => {
+            renderSearchResults(e.target.value);
+        };
+
+        function renderSearchResults(query) {
+            const results = document.getElementById('global-search-results');
+            results.innerHTML = '';
+            const q = query.toLowerCase();
+            const filtered = flatRequests.filter(r => r.path.toLowerCase().includes(q));
+            
+            filtered.slice(0, 10).forEach(r => {
+                const div = document.createElement('div');
+                div.className = 'request-item';
+                div.innerHTML = `<span class="method-tag method-${r.request.method}">${r.request.method}</span><span>${r.path}</span>`;
+                div.onclick = () => {
+                    selectRequest(r.path);
+                    closeModal('search-modal');
+                };
+                results.appendChild(div);
+            });
+            if (filtered.length === 0) {
+                results.innerHTML = '<div style="padding: 12px; color: var(--text-secondary); font-size: 13px;">No results found.</div>';
+            }
+        }
+
+        function applyJsonFilter(query) {
+            if (!currentRequest) return;
+            const cached = responseCache[currentRequest.path];
+            if (!cached || !cached.isJson) return;
+            
+            const rBody = document.getElementById('response-body');
+            if (!query) {
+                rBody.innerHTML = syntaxHighlight(cached.body);
+                return;
+            }
+
+            try {
+                // This is a simple gjson-like filter for JS objects
+                const data = JSON.parse(cached.body);
+                // For simplicity, we only support basic key access for now
+                let result = data;
+                const parts = query.split('.');
+                for (const p of parts) {
+                    if (result && result.hasOwnProperty(p)) {
+                        result = result[p];
+                    } else {
+                        result = undefined;
+                        break;
+                    }
+                }
+                rBody.innerHTML = result !== undefined ? syntaxHighlight(result) : '<div style="color:var(--method-delete)">Path not found</div>';
+            } catch (e) {
+                rBody.textContent = "Filter Error: " + e.message;
+            }
+        }
+
+        function showImportModal() { document.getElementById('import-modal').classList.add('show'); }
+        async function importCurl() {
+            const curl = document.getElementById('curl-input').value;
+            const resp = await fetch('/api/import/curl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ curl }) });
+            if (resp.ok) { closeModal('import-modal'); await init(); alert("Imported!"); }
+        }
+
         init();
+        fetchActiveEnv();
+        fetchEnvironments();
 
         const sidebarResizer = document.getElementById('resizer-sidebar');
         const responseResizer = document.getElementById('resizer-response');

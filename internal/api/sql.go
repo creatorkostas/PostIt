@@ -3,16 +3,26 @@ package api
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	_ "modernc.org/sqlite"
 )
 
-func (c *Client) ExecuteSQL(dbPath, query string) ([]string, [][]string, error) {
-	if dbPath == "" || query == "" {
-		return nil, nil, fmt.Errorf("DB path and query are required")
+func (c *Client) ExecuteSQL(connStr, query string) ([]string, [][]string, error) {
+	if connStr == "" || query == "" {
+		return nil, nil, fmt.Errorf("Connection string and query are required")
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	driver := "sqlite"
+	if strings.Contains(connStr, "postgres://") || strings.Contains(connStr, "sslmode=") {
+		driver = "postgres"
+	} else if strings.Contains(connStr, "@tcp(") || strings.Contains(connStr, "mysql") {
+		driver = "mysql"
+	}
+
+	db, err := sql.Open(driver, connStr)
 	if err != nil {
 		return nil, nil, err
 	}

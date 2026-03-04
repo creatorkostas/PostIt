@@ -33,13 +33,30 @@ func NewScriptProcessor(store *storage.Manager) *ScriptProcessor {
 func (sp *ScriptProcessor) ResolveVariables(text string) string {
 	return reVar.ReplaceAllStringFunc(text, func(m string) string {
 		varName := m[2 : len(m)-2]
+		
+		// 1. Check active environment
+		if sp.Storage.ActiveEnvID != "" {
+			for _, env := range sp.Storage.Environments {
+				if env.ID == sp.Storage.ActiveEnvID {
+					if val, ok := env.Variables[varName]; ok && val != "" {
+						return val
+					}
+					break
+				}
+			}
+		}
+
+		// 2. Check globals
 		if val, ok := sp.Storage.VariableMap[varName]; ok && val != "" {
 			return val
 		}
+		
+		// 3. Check OS env
 		if val := os.Getenv(varName); val != "" {
 			sp.Storage.SetVariable(varName, val)
 			return val
 		}
+		
 		var val string
 		prompt := &survey.Input{Message: fmt.Sprintf("Variable '%s' required. Value:", varName)}
 		survey.AskOne(prompt, &val)
@@ -182,6 +199,18 @@ func (sp *ScriptProcessor) resolveValue(raw string, body *string, respHeaders ma
 }
 
 func (sp *ScriptProcessor) GetOrPrompt(name string) string {
+	// 1. Check active environment
+	if sp.Storage.ActiveEnvID != "" {
+		for _, env := range sp.Storage.Environments {
+			if env.ID == sp.Storage.ActiveEnvID {
+				if val, ok := env.Variables[name]; ok && val != "" {
+					return val
+				}
+				break
+			}
+		}
+	}
+
 	if val, ok := sp.Storage.VariableMap[name]; ok && val != "" {
 		return val
 	}

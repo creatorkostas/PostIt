@@ -11,25 +11,57 @@ import (
 )
 
 type Manager struct {
-	OutputDir     string
-	VarsPath      string
-	HeadersPath   string
-	HistoryPath   string
-	WorkflowsPath string
-	VariableMap   map[string]string
-	GlobalHeaders []models.Header
+	OutputDir        string
+	VarsPath         string
+	HeadersPath      string
+	HistoryPath      string
+	WorkflowsPath    string
+	EnvironmentsPath string
+	ActiveEnvPath    string
+	VariableMap      map[string]string
+	GlobalHeaders    []models.Header
+	Environments     []models.Environment
+	ActiveEnvID      string
 }
 
 func NewManager(outputDir string) *Manager {
 	return &Manager{
-		OutputDir:     outputDir,
-		VarsPath:      filepath.Join(outputDir, "variables.json"),
-		HeadersPath:   filepath.Join(outputDir, "global_headers.json"),
-		HistoryPath:   filepath.Join(outputDir, "history.json"),
-		WorkflowsPath: filepath.Join(outputDir, "workflows.json"),
-		VariableMap:   make(map[string]string),
-		GlobalHeaders: []models.Header{},
+		OutputDir:        outputDir,
+		VarsPath:         filepath.Join(outputDir, "variables.json"),
+		HeadersPath:      filepath.Join(outputDir, "global_headers.json"),
+		HistoryPath:      filepath.Join(outputDir, "history.json"),
+		WorkflowsPath:    filepath.Join(outputDir, "workflows.json"),
+		EnvironmentsPath: filepath.Join(outputDir, "environments.json"),
+		ActiveEnvPath:    filepath.Join(outputDir, "active_env.json"),
+		VariableMap:      make(map[string]string),
+		GlobalHeaders:    []models.Header{},
+		Environments:     []models.Environment{},
 	}
+}
+
+func (m *Manager) LoadEnvironments() []models.Environment {
+	if data, err := ioutil.ReadFile(m.EnvironmentsPath); err == nil {
+		json.Unmarshal(data, &m.Environments)
+	}
+	return m.Environments
+}
+
+func (m *Manager) SaveEnvironments(envs []models.Environment) {
+	m.Environments = envs
+	data, _ := json.MarshalIndent(envs, "", "  ")
+	ioutil.WriteFile(m.EnvironmentsPath, data, 0644)
+}
+
+func (m *Manager) LoadActiveEnv() string {
+	if data, err := ioutil.ReadFile(m.ActiveEnvPath); err == nil {
+		m.ActiveEnvID = strings.TrimSpace(string(data))
+	}
+	return m.ActiveEnvID
+}
+
+func (m *Manager) SaveActiveEnv(id string) {
+	m.ActiveEnvID = id
+	ioutil.WriteFile(m.ActiveEnvPath, []byte(id), 0644)
 }
 
 func (m *Manager) LoadWorkflows() []models.Workflow {
