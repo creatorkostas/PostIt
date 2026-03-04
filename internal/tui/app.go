@@ -201,12 +201,12 @@ func (t *TUIApp) showRequest(req *models.RequestInfo) {
 	}
 
 	fmt.Fprintf(view, "\n[yellow]BODY:\n")
-	if req.Request.Body == nil || (req.Request.Body.Raw == "" && len(req.Request.Body.Urlencoded) == 0) {
+	if req.Request.Body == nil || (req.Request.Body.Raw == "" && len(req.Request.Body.UrlEncoded) == 0) {
 		fmt.Fprintf(view, "  [gray]Empty\n")
 	} else if req.Request.Body.Mode == "raw" {
 		fmt.Fprintf(view, "[white]%s\n", req.Request.Body.Raw)
 	} else {
-		for _, f := range req.Request.Body.Urlencoded {
+		for _, f := range req.Request.Body.UrlEncoded {
 			fmt.Fprintf(view, "  [blue]%s:[white] %s\n", f.Key, f.Value)
 		}
 	}

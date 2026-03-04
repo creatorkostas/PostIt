@@ -1,7 +1,14 @@
 package storage
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -22,6 +29,7 @@ type Manager struct {
 	GlobalHeaders    []models.Header
 	Environments     []models.Environment
 	ActiveEnvID      string
+	VaultKey         []byte // AES-256 Key derived from password
 }
 
 func NewManager(outputDir string) *Manager {
@@ -156,6 +164,59 @@ func (m *Manager) SaveSingleRequest(req models.RequestInfo) {
 func (m *Manager) DeleteRequestFile(path string) {
 	filename := getSafeFilename(path)
 	os.Remove(filepath.Join(m.OutputDir, filename))
+}
+
+func (m *Manager) SetVaultPassword(password string) {
+	hash := sha256.Sum256([]byte(password))
+	m.VaultKey = hash[:]
+}
+
+func (m *Manager) Encrypt(plaintext string) (string, error) {
+	if len(m.VaultKey) == 0 {
+		return "", fmt.Errorf("Vault is locked")
+	}
+	block, err := aes.NewCipher(m.VaultKey)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+func (m *Manager) Decrypt(ciphertextStr string) (string, error) {
+	if len(m.VaultKey) == 0 {
+		return "", fmt.Errorf("Vault is locked")
+	}
+	ciphertext, err := base64.StdEncoding.DecodeString(ciphertextStr)
+	if err != nil {
+		return "", err
+	}
+	block, err := aes.NewCipher(m.VaultKey)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return "", fmt.Errorf("ciphertext too short")
+	}
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", err
+	}
+	return string(plaintext), nil
 }
 
 func getSafeFilename(path string) string {

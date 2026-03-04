@@ -16,15 +16,25 @@ type WorkflowLog struct {
 	Error      string `json:"error"`
 }
 
-func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.RequestInfo) ([]WorkflowLog, error) {
+func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.RequestInfo, startNodeID string) ([]WorkflowLog, error) {
 	logs := []WorkflowLog{}
 	
 	if len(workflow.Nodes) == 0 {
 		return logs, nil
 	}
 
-	// Simple graph traversal starting from first node
-	currentNode := &workflow.Nodes[0]
+	var currentNode *models.WorkflowNode
+	if startNodeID == "" {
+		currentNode = &workflow.Nodes[0]
+	} else {
+		for i := range workflow.Nodes {
+			if workflow.Nodes[i].ID == startNodeID {
+				currentNode = &workflow.Nodes[i]
+				break
+			}
+		}
+	}
+
 	visited := make(map[string]bool)
 
 	for currentNode != nil {
@@ -75,8 +85,6 @@ func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.Reques
 			log.StatusText = fmt.Sprintf("Waited %dms", currentNode.WaitTime)
 
 		case "condition":
-			// Evaluate condition against last response body or variables
-			// For simplicity, we check if condition (gjson path) exists in last body
 			lastBody := ""
 			if len(logs) > 0 {
 				lastBody = logs[len(logs)-1].Body
@@ -89,15 +97,56 @@ func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.Reques
 				outcome = "failure"
 				log.StatusText = "Condition False"
 			}
+
+		case "loop":
+			lastBody := ""
+			if len(logs) > 0 {
+				lastBody = logs[len(logs)-1].Body
+			}
+			array := gjson.Get(lastBody, currentNode.LoopPath)
+			if !array.IsArray() {
+				log.Error = "Loop path is not an array"
+				outcome = "failure"
+			} else {
+				items := array.Array()
+				max := currentNode.MaxIterations
+				if max <= 0 || max > len(items) { max = len(items) }
+				
+				log.StatusText = fmt.Sprintf("Looping %d items", max)
+				
+				var loopEntryID string
+				for _, e := range workflow.Edges {
+					if e.FromNode == currentNode.ID && e.Type == "loop_item" {
+						loopEntryID = e.ToNode
+						break
+					}
+				}
+
+				if loopEntryID != "" {
+					for i := 0; i < max; i++ {
+						c.Storage.VariableMap["$item"] = items[i].Raw
+						subLogs, _ := c.RunWorkflow(workflow, requests, loopEntryID)
+						for _, sl := range subLogs {
+							sl.NodeID = fmt.Sprintf("%s [Iter %d] > %s", currentNode.ID, i, sl.NodeID)
+							logs = append(logs, sl)
+						}
+					}
+				}
+				outcome = "success"
+			}
 		}
 
 		logs = append(logs, log)
 
-		// Find next node based on outcome
 		var nextNodeID string
 		for _, edge := range workflow.Edges {
 			if edge.FromNode == currentNode.ID {
-				if edge.Type == outcome || edge.Type == "default" || edge.Type == "" {
+				// For loop node, "default" edge is followed AFTER the loop completes
+				if currentNode.Type == "loop" && (edge.Type == "default" || edge.Type == "success") {
+					nextNodeID = edge.ToNode
+					break
+				}
+				if currentNode.Type != "loop" && (edge.Type == outcome || edge.Type == "default" || edge.Type == "") {
 					nextNodeID = edge.ToNode
 					break
 				}
@@ -107,12 +156,15 @@ func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.Reques
 		if nextNodeID == "" {
 			currentNode = nil
 		} else {
+			found := false
 			for i := range workflow.Nodes {
 				if workflow.Nodes[i].ID == nextNodeID {
 					currentNode = &workflow.Nodes[i]
+					found = true
 					break
 				}
 			}
+			if !found { currentNode = nil }
 		}
 	}
 

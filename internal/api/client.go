@@ -52,7 +52,7 @@ func (c *Client) ExecuteRequest(req *models.Request) (string, map[string][]strin
 			r.SetBody(c.Processor.ResolveVariables(req.Body.Raw))
 		} else if req.Body.Mode == "urlencoded" {
 			formData := make(map[string]string)
-			for _, f := range req.Body.Urlencoded {
+			for _, f := range req.Body.UrlEncoded {
 				formData[c.Processor.ResolveVariables(f.Key)] = c.Processor.ResolveVariables(f.Value)
 			}
 			r.SetFormData(formData)

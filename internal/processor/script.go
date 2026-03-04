@@ -2,13 +2,16 @@ package processor
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"postit/internal/models"
 	"postit/internal/storage"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 )
 
@@ -34,12 +37,39 @@ func (sp *ScriptProcessor) ResolveVariables(text string) string {
 	return reVar.ReplaceAllStringFunc(text, func(m string) string {
 		varName := m[2 : len(m)-2]
 		
+		// Magic Variables
+		if strings.HasPrefix(varName, "$") {
+			switch varName {
+			case "$guid":
+				return uuid.New().String()
+			case "$timestamp":
+				return fmt.Sprintf("%d", time.Now().Unix())
+			case "$isoTimestamp":
+				return time.Now().Format(time.RFC3339)
+			case "$randomInt":
+				return fmt.Sprintf("%d", rand.Intn(1000))
+			case "$randomPassword":
+				const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
+				b := make([]byte, 12)
+				for i := range b {
+					b[i] = charset[rand.Intn(len(charset))]
+				}
+				return string(b)
+			}
+		}
+
 		// 1. Check active environment
 		if sp.Storage.ActiveEnvID != "" {
 			for _, env := range sp.Storage.Environments {
 				if env.ID == sp.Storage.ActiveEnvID {
 					if val, ok := env.Variables[varName]; ok && val != "" {
 						return val
+					}
+					if val, ok := env.SecretVars[varName]; ok && val != "" {
+						if decrypted, err := sp.Storage.Decrypt(val); err == nil {
+							return decrypted
+						}
+						return " [LOCKED] "
 					}
 					break
 				}
@@ -205,6 +235,12 @@ func (sp *ScriptProcessor) GetOrPrompt(name string) string {
 			if env.ID == sp.Storage.ActiveEnvID {
 				if val, ok := env.Variables[name]; ok && val != "" {
 					return val
+				}
+				if val, ok := env.SecretVars[name]; ok && val != "" {
+					if decrypted, err := sp.Storage.Decrypt(val); err == nil {
+						return decrypted
+					}
+					return " [LOCKED] "
 				}
 				break
 			}

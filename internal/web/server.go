@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"postit/internal/storage"
 	"strings"
 	"time"
+
+	"github.com/tidwall/gjson"
 )
 
 //go:embed static/*
@@ -61,6 +64,9 @@ func (s *Server) Start(port int) error {
 	http.HandleFunc("/api/workflows/run", s.handleRunWorkflow)
 	http.HandleFunc("/api/environments", s.handleEnvironments)
 	http.HandleFunc("/api/environments/active", s.handleActiveEnv)
+	http.HandleFunc("/api/vault/unlock", s.handleUnlockVault)
+	http.HandleFunc("/api/vault/encrypt", s.handleVaultEncrypt)
+	http.HandleFunc("/api/vault/status", s.handleVaultStatus)
 	
 	if s.EnableMock {
 		http.HandleFunc("/mock/", s.handleMockRequest)
@@ -72,7 +78,11 @@ func (s *Server) Start(port int) error {
 		})
 	}
 
-	http.Handle("/", http.FileServer(http.FS(staticAssets)))
+	fsys, err := fs.Sub(staticAssets, "static")
+	if err != nil {
+		return err
+	}
+	http.Handle("/", http.FileServer(http.FS(fsys)))
 
 	fmt.Printf("Web UI started at http://localhost:%d\n", port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
@@ -153,13 +163,15 @@ func (s *Server) handleMockRequest(w http.ResponseWriter, r *http.Request) {
 	mockPath := strings.TrimPrefix(r.URL.Path, "/mock")
 	if mockPath == "" { mockPath = "/" }
 
-	fmt.Printf("Mock request received: %s %s\n", r.Method, mockPath)
+	bodyBytes, _ := ioutil.ReadAll(r.Body)
+	bodyStr := string(bodyBytes)
 
 	for _, reqInfo := range s.FlatList {
-		// Basic path matching: resolve variables in saved URL and compare paths
+		if !strings.EqualFold(reqInfo.Request.Method, r.Method) {
+			continue
+		}
+
 		resolvedURL := s.Processor.ResolveVariables(reqInfo.Request.URL.Raw)
-		
-		// Remove protocol and host to compare just the path
 		savedPath := resolvedURL
 		if idx := strings.Index(savedPath, "://"); idx != -1 {
 			savedPath = savedPath[idx+3:]
@@ -169,29 +181,59 @@ func (s *Server) handleMockRequest(w http.ResponseWriter, r *http.Request) {
 		} else {
 			savedPath = "/"
 		}
-
-		// Simple matching (ignoring query params for now)
 		savedPathOnly := strings.Split(savedPath, "?")[0]
-		incomingPathOnly := strings.Split(mockPath, "?")[0]
 
-		if savedPathOnly == incomingPathOnly && strings.EqualFold(reqInfo.Request.Method, r.Method) {
-			if len(reqInfo.Responses) > 0 {
-				// For now, return the first mock response
-				mock := reqInfo.Responses[0]
-				
-				for _, h := range mock.Header {
-					w.Header().Add(h.Key, s.Processor.ResolveVariables(h.Value))
+		params, matched := s.matchMockPath(savedPathOnly, mockPath)
+		if !matched {
+			continue
+		}
+
+		// Inject path params as variables
+		for k, v := range params {
+			s.Storage.VariableMap[k] = v
+		}
+
+		for _, mock := range reqInfo.Responses {
+			// Check condition if present
+			if mock.Condition != "" {
+				// Evaluate condition against incoming body
+				val := gjson.Get(bodyStr, mock.Condition)
+				if !val.Exists() || val.Type == gjson.False || val.String() == "" {
+					continue
 				}
-				
-				w.WriteHeader(mock.Code)
-				w.Write([]byte(s.Processor.ResolveVariables(mock.Body)))
-				return
 			}
+
+			// Found a match
+			for _, h := range mock.Header {
+				w.Header().Add(h.Key, s.Processor.ResolveVariables(h.Value))
+			}
+			w.WriteHeader(mock.Code)
+			w.Write([]byte(s.Processor.ResolveVariables(mock.Body)))
+			return
 		}
 	}
 
 	w.WriteHeader(http.StatusNotFound)
 	fmt.Fprintf(w, "No mock response found for %s %s", r.Method, mockPath)
+}
+
+func (s *Server) matchMockPath(pattern, path string) (map[string]string, bool) {
+	patternParts := strings.Split(strings.Trim(pattern, "/"), "/")
+	pathParts := strings.Split(strings.Trim(path, "/"), "/")
+
+	if len(patternParts) != len(pathParts) {
+		return nil, false
+	}
+
+	params := make(map[string]string)
+	for i := range patternParts {
+		if strings.HasPrefix(patternParts[i], ":") {
+			params[patternParts[i][1:]] = pathParts[i]
+		} else if patternParts[i] != pathParts[i] {
+			return nil, false
+		}
+	}
+	return params, true
 }
 
 func (s *Server) handleDeleteRequest(w http.ResponseWriter, r *http.Request) {
@@ -268,7 +310,7 @@ func (s *Server) handleUpdateRequest(w http.ResponseWriter, r *http.Request) {
 		URL              string              `json:"url"`
 		BodyMode         string              `json:"bodyMode"`
 		BodyRaw          string              `json:"bodyRaw"`
-		Urlencoded       []models.Urlencoded `json:"urlencoded"`
+		UrlEncoded       []models.UrlEncoded `json:"urlencoded"`
 		Headers          []models.Header     `json:"headers"`
 		PreRequestScript string              `json:"preRequestScript"`
 		TestScript       string              `json:"testScript"`
@@ -301,7 +343,7 @@ func (s *Server) handleUpdateRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	s.FlatList[targetIdx].Request.Body.Mode = input.BodyMode
 	s.FlatList[targetIdx].Request.Body.Raw = input.BodyRaw
-	s.FlatList[targetIdx].Request.Body.Urlencoded = input.Urlencoded
+	s.FlatList[targetIdx].Request.Body.UrlEncoded = input.UrlEncoded
 	
 	s.FlatList[targetIdx].Request.Header = input.Headers
 
@@ -349,7 +391,7 @@ func (s *Server) handleNewRequest(w http.ResponseWriter, r *http.Request) {
 		URL              string              `json:"url"`
 		BodyMode         string              `json:"bodyMode"`
 		BodyRaw          string              `json:"bodyRaw"`
-		Urlencoded       []models.Urlencoded `json:"urlencoded"`
+		UrlEncoded       []models.UrlEncoded `json:"urlencoded"`
 		Headers          []models.Header     `json:"headers"`
 		PreRequestScript string              `json:"preRequestScript"`
 		TestScript       string              `json:"testScript"`
@@ -367,7 +409,7 @@ func (s *Server) handleNewRequest(w http.ResponseWriter, r *http.Request) {
 			Body: &models.Body{
 				Mode:       input.BodyMode,
 				Raw:        input.BodyRaw,
-				Urlencoded: input.Urlencoded,
+				UrlEncoded: input.UrlEncoded,
 			},
 			Header: input.Headers,
 		},
@@ -517,7 +559,7 @@ func (s *Server) handleSendRequest(w http.ResponseWriter, r *http.Request) {
 		Path       string              `json:"path"`
 		BodyMode   string              `json:"bodyMode"`
 		BodyRaw    string              `json:"bodyRaw"`
-		Urlencoded []models.Urlencoded `json:"urlencoded"`
+		UrlEncoded []models.UrlEncoded `json:"urlencoded"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -542,7 +584,7 @@ func (s *Server) handleSendRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	target.Request.Body.Mode = input.BodyMode
 	target.Request.Body.Raw = input.BodyRaw
-	target.Request.Body.Urlencoded = input.Urlencoded
+	target.Request.Body.UrlEncoded = input.UrlEncoded
 
 	s.Processor.RunScripts(target.Events, "prerequest", nil, nil, target.Request.Header)
 
@@ -736,7 +778,7 @@ func (s *Server) handleRunWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logs, err := s.Client.RunWorkflow(&workflow, s.FlatList)
+	logs, err := s.Client.RunWorkflow(&workflow, s.FlatList, "")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -832,6 +874,52 @@ func (s *Server) handleGenerateDocs(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html")
 	w.Write([]byte(html.String()))
+}
+
+func (s *Server) handleUnlockVault(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	s.Storage.SetVaultPassword(input.Password)
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleVaultEncrypt(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct {
+		Plaintext string `json:"plaintext"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ciphertext, err := s.Storage.Encrypt(input.Plaintext)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden) // Probably locked
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"ciphertext": ciphertext})
+}
+
+func (s *Server) handleVaultStatus(w http.ResponseWriter, r *http.Request) {
+	unlocked := len(s.Storage.VaultKey) > 0
+	json.NewEncoder(w).Encode(map[string]bool{"unlocked": unlocked})
 }
 
 // Helper to match JS Date.now()
