@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"postit/internal/models"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,8 +17,11 @@ type HammerResults struct {
 	FailureCount  int64
 	TotalDuration time.Duration
 	AverageLatency time.Duration
+	P95Latency     time.Duration
+	P99Latency     time.Duration
 	RPS           float64
 	StatusCodes   map[int]int64
+	Latencies     []time.Duration
 	Mutex         sync.Mutex
 }
 
@@ -78,6 +82,7 @@ func (c *Client) Hammer(req *models.Request, workers int, duration time.Duration
 					atomic.AddInt64(&results.TotalRequests, 1)
 
 					results.Mutex.Lock()
+					results.Latencies = append(results.Latencies, latency)
 					if err != nil || resp.IsError() {
 						results.FailureCount++
 					} else {
@@ -86,7 +91,7 @@ func (c *Client) Hammer(req *models.Request, workers int, duration time.Duration
 					if resp != nil {
 						results.StatusCodes[resp.StatusCode()]++
 					}
-					results.AverageLatency += latency // Will divide later
+					results.AverageLatency += latency 
 					results.Mutex.Unlock()
 				}
 			}
@@ -100,6 +105,18 @@ func (c *Client) Hammer(req *models.Request, workers int, duration time.Duration
 	if results.TotalRequests > 0 {
 		results.AverageLatency = time.Duration(int64(results.AverageLatency) / results.TotalRequests)
 		results.RPS = float64(results.TotalRequests) / actualDuration.Seconds()
+
+		sort.Slice(results.Latencies, func(i, j int) bool {
+			return results.Latencies[i] < results.Latencies[j]
+		})
+		
+		p95Idx := int(float64(len(results.Latencies)) * 0.95)
+		if p95Idx >= len(results.Latencies) { p95Idx = len(results.Latencies) - 1 }
+		results.P95Latency = results.Latencies[p95Idx]
+
+		p99Idx := int(float64(len(results.Latencies)) * 0.99)
+		if p99Idx >= len(results.Latencies) { p99Idx = len(results.Latencies) - 1 }
+		results.P99Latency = results.Latencies[p99Idx]
 	}
 
 	return results

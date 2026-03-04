@@ -4,7 +4,10 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"os"
+	"path/filepath"
 	"postit/internal/api"
 	"postit/internal/models"
 	"postit/internal/processor"
@@ -49,10 +52,15 @@ func (s *Server) Start(port int) error {
 	http.HandleFunc("/api/history/delete", s.handleDeleteHistory)
 	http.HandleFunc("/api/send", s.handleSendRequest)
 	http.HandleFunc("/api/hammer", s.handleHammerRequest)
+	http.HandleFunc("/api/hammer/history", s.handleGetHammerHistory)
 	http.HandleFunc("/api/sql", s.handleSQLRequest)
 	http.HandleFunc("/api/mock/save", s.handleSaveMockResponse)
+	http.HandleFunc("/api/import/curl", s.handleImportCurl)
+	http.HandleFunc("/api/docs/generate", s.handleGenerateDocs)
 	http.HandleFunc("/api/workflows", s.handleWorkflows)
 	http.HandleFunc("/api/workflows/run", s.handleRunWorkflow)
+	http.HandleFunc("/api/environments", s.handleEnvironments)
+	http.HandleFunc("/api/environments/active", s.handleActiveEnv)
 	
 	if s.EnableMock {
 		http.HandleFunc("/mock/", s.handleMockRequest)
@@ -609,8 +617,30 @@ func (s *Server) handleHammerRequest(w http.ResponseWriter, r *http.Request) {
 
 	results := s.Client.Hammer(target.Request, input.Workers, time.Duration(input.Duration)*time.Second)
 
+	// Persist Report
+	go func() {
+		reportDir := filepath.Join(s.Storage.OutputDir, "hammer_reports")
+		os.MkdirAll(reportDir, 0755)
+		reportPath := filepath.Join(reportDir, fmt.Sprintf("report_%d.json", time.Now().Unix()))
+		data, _ := json.MarshalIndent(results, "", "  ")
+		ioutil.WriteFile(reportPath, data, 0644)
+	}()
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
+}
+
+func (s *Server) handleGetHammerHistory(w http.ResponseWriter, r *http.Request) {
+	reportDir := filepath.Join(s.Storage.OutputDir, "hammer_reports")
+	files, _ := ioutil.ReadDir(reportDir)
+	var reports []string
+	for _, f := range files {
+		if !f.IsDir() && strings.HasSuffix(f.Name(), ".json") {
+			reports = append(reports, f.Name())
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(reports)
 }
 
 func (s *Server) handleSQLRequest(w http.ResponseWriter, r *http.Request) {
@@ -620,9 +650,11 @@ func (s *Server) handleSQLRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Path   string `json:"path"`
-		DBPath string `json:"db_path"`
-		Query  string `json:"query"`
+		Path      string `json:"path"`
+		DBPath    string `json:"db_path"`
+		Query     string `json:"query"`
+		TargetVar string `json:"targetVar"`
+		TargetCol string `json:"targetCol"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -645,6 +677,21 @@ func (s *Server) handleSQLRequest(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Extract to variable if requested
+	if input.TargetVar != "" && input.TargetCol != "" && len(rows) > 0 {
+		colIdx := -1
+		for i, c := range cols {
+			if strings.EqualFold(c, input.TargetCol) {
+				colIdx = i
+				break
+			}
+		}
+		if colIdx != -1 {
+			s.Storage.VariableMap[input.TargetVar] = rows[0][colIdx]
+			s.Storage.SaveVariables()
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -697,6 +744,94 @@ func (s *Server) handleRunWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(logs)
+}
+
+func (s *Server) handleEnvironments(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		envs := s.Storage.LoadEnvironments()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(envs)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var envs []models.Environment
+		if err := json.NewDecoder(r.Body).Decode(&envs); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.Storage.SaveEnvironments(envs)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+func (s *Server) handleActiveEnv(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		id := s.Storage.LoadActiveEnv()
+		json.NewEncoder(w).Encode(map[string]string{"id": id})
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var input struct{ ID string `json:"id"` }
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.Storage.SaveActiveEnv(input.ID)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+func (s *Server) handleImportCurl(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct {
+		Curl string `json:"curl"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	req := processor.ParseCurl(input.Curl)
+	newReq := models.RequestInfo{
+		Path:    "Imported > cURL " + time.Now().Format("15:04:05"),
+		Request: req,
+		Order:   len(s.FlatList),
+	}
+
+	s.Storage.SaveSingleRequest(newReq)
+	s.FlatList = append(s.FlatList, newReq)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(newReq)
+}
+
+func (s *Server) handleGenerateDocs(w http.ResponseWriter, r *http.Request) {
+	var html strings.Builder
+	html.WriteString("<html><head><title>API Documentation</title><style>body{font-family:sans-serif;padding:40px;background:#f4f4f5;} .req{background:white;padding:20px;border-radius:8px;margin-bottom:20px;box-shadow:0 2px 4px rgba(0,0,0,0.1);} .method{font-weight:bold;color:#ff6c37;} .url{font-family:monospace;color:#666;}</style></head><body>")
+	html.WriteString("<h1>API Documentation</h1>")
+	for _, req := range s.FlatList {
+		html.WriteString("<div class='req'>")
+		html.WriteString(fmt.Sprintf("<h2>%s</h2>", req.Path))
+		html.WriteString(fmt.Sprintf("<div><span class='method'>%s</span> <span class='url'>%s</span></div>", req.Request.Method, req.Request.URL.Raw))
+		if req.Request.Body != nil && req.Request.Body.Raw != "" {
+			html.WriteString("<h3>Body</h3><pre>" + req.Request.Body.Raw + "</pre>")
+		}
+		html.WriteString("</div>")
+	}
+	html.WriteString("</body></html>")
+
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte(html.String()))
 }
 
 // Helper to match JS Date.now()
