@@ -140,16 +140,36 @@
             </div>
         </section>
 
+        <section id="history">
+            <h2>1. Request & Response History <span class="tag tag-new">New</span></h2>
+            <div class="feature-card">
+                <h3>Persistent Snapshots</h3>
+                <p>Every request sent via the Web UI, TUI, or CLI is now automatically recorded in the <strong>HISTORY</strong> tab with its full context.</p>
+                <ul>
+                    <li><strong>Full Response Saving:</strong> Unlike traditional clients, PostIt saves the <strong>exact response body and headers</strong> for every historical call.</li>
+                    <li><strong>Time Travel:</strong> Click any item in the History sidebar to instantly restore that specific response snapshot, even if the server's data has since changed.</li>
+                    <li><strong>Metadata:</strong> Each record includes the precise timestamp, method, resolved URL, status code, and millisecond duration.</li>
+                </ul>
+            </div>
+        </section>
+
         <section id="response">
             <h2>3. Response & Validation</h2>
             <div class="feature-card">
                 <h3>Advanced JSON Transformation Engine <span class="tag tag-pro">Pro</span></h3>
                 <p>PostIt features a powerful query engine in the response <strong>FILTER</strong> bar. You can drill down, search, filter, and transform JSON data on the fly.</p>
                 
+                <h4 style="margin-top: 20px; color: var(--accent);">Multi-Filtering & Exclusions <span class="tag tag-new">New</span></h4>
+                <p>You can now combine multiple filters and exclusions in a single line, separated by spaces.</p>
+                <ul>
+                    <li><strong>Multiple Exclusions:</strong> Hide several deep keys at once. <br><code>-**.literals -**.assets -metadata</code></li>
+                    <li><strong>Combined Query:</strong> Exclude data first, then run a path query. <br><code>-**.debugInfo data.users[active=true]</code></li>
+                </ul>
+
                 <h4 style="margin-top: 20px; color: var(--accent);">Filtering & Searching</h4>
                 <ul>
                     <li><strong>Drill Down:</strong> Standard dot notation. <br><code>data.user.profile</code></li>
-                    <li><strong>Exclude:</strong> Hide specific keys using the minus prefix. <br><code>-data.logs</code></li>
+                    <li><strong>Exclude:</strong> Hide specific keys using the minus prefix. Supports deep search. <br><code>-data.logs</code> or <code>-**.password</code></li>
                     <li><strong>Deep Search:</strong> Find a key anywhere in the JSON hierarchy. <br><code>**.id</code> (Returns all IDs found at any level)</li>
                     <li><strong>Predicates:</strong> Filter arrays by property values. Supports <code>=, !=, >, <, >=, <=</code>. <br><code>data.users[id=5]</code> or <code>products[price>100]</code></li>
                 </ul>
@@ -169,9 +189,12 @@
                     <li><code>| keys</code> - Returns a list of all top-level keys in an object.</li>
                 </ul>
 
-                <h4 style="margin-top: 20px; color: var(--accent);">Example Query</h4>
-                <p>Find all active users, pick their names, and count them:</p>
-                <code>data.users[status=active]{name} | count</code>
+                <h4 style="margin-top: 20px; color: var(--accent);">Example Advanced Queries</h4>
+                <ul>
+                    <li><strong>Exclude & Count:</strong> <code>-**.metadata data.items | count</code></li>
+                    <li><strong>Deep Find & First:</strong> <code>**.emails | first</code></li>
+                    <li><strong>Complex Chain:</strong> <code>data.users[role=admin]{id, name} | sort:name</code></li>
+                </ul>
             </div>
 
             <div class="feature-card">

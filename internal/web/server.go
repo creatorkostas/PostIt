@@ -866,18 +866,129 @@ func (s *Server) handleImportCurl(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGenerateDocs(w http.ResponseWriter, r *http.Request) {
 	var html strings.Builder
-	html.WriteString("<html><head><title>API Documentation</title><style>body{font-family:sans-serif;padding:40px;background:#f4f4f5;} .req{background:white;padding:20px;border-radius:8px;margin-bottom:20px;box-shadow:0 2px 4px rgba(0,0,0,0.1);} .method{font-weight:bold;color:#ff6c37;} .url{font-family:monospace;color:#666;}</style></head><body>")
-	html.WriteString("<h1>API Documentation</h1>")
+	html.WriteString(`<!DOCTYPE html>
+<html>
+<head>
+    <title>PostIt - API Documentation</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-page: #f8fafc;
+            --bg-sidebar: #ffffff;
+            --bg-card: #ffffff;
+            --border: #e2e8f0;
+            --text-main: #0f172a;
+            --text-secondary: #64748b;
+            --accent: #ff6c37;
+            --accent-soft: #fff1eb;
+            --code-bg: #1e293b;
+            --code-text: #e2e8f0;
+            --method-get: #10b981;
+            --method-post: #f59e0b;
+            --method-put: #3b82f6;
+            --method-delete: #ef4444;
+            --method-patch: #8b5cf6;
+        }
+        body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg-page); color: var(--text-main); display: flex; height: 100vh; overflow: hidden; }
+        
+        #sidebar { width: 300px; background: var(--bg-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+        #sidebar-header { padding: 24px; border-bottom: 1px solid var(--border); }
+        #sidebar-header h1 { margin: 0; font-size: 18px; font-weight: 700; color: var(--accent); }
+        .sidebar-item { padding: 12px 24px; font-size: 13px; font-weight: 500; color: var(--text-secondary); cursor: pointer; border-left: 3px solid transparent; transition: all 0.2s; text-decoration: none; display: block; }
+        .sidebar-item:hover { background: #f1f5f9; color: var(--text-main); }
+        .sidebar-item.active { background: var(--accent-soft); color: var(--accent); border-left-color: var(--accent); }
+
+        #main { flex: 1; overflow-y: auto; padding: 48px; scroll-behavior: smooth; }
+        .container { max-width: 900px; margin: 0 auto; }
+        
+        .req-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 32px; margin-bottom: 48px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .req-header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+        .method-badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; text-transform: uppercase; color: white; }
+        .method-GET { background: var(--method-get); }
+        .method-POST { background: var(--method-post); }
+        .method-PUT { background: var(--method-put); }
+        .method-DELETE { background: var(--method-delete); }
+        .method-PATCH { background: var(--method-patch); }
+        .req-path { font-size: 20px; font-weight: 700; color: var(--text-main); }
+        
+        .url-box { background: #f1f5f9; padding: 12px 16px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text-main); margin-bottom: 24px; border: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+        
+        h3 { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin: 32px 0 16px 0; }
+        
+        .table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+        .table th { text-align: left; padding: 12px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-secondary); }
+        .table td { padding: 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+        
+        pre { background: var(--code-bg); color: var(--code-text); padding: 20px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 13px; overflow-x: auto; line-height: 1.6; }
+        
+        .tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+        .tab { padding: 12px 0; font-size: 13px; font-weight: 600; color: var(--text-secondary); cursor: pointer; border-bottom: 2px solid transparent; }
+        .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <div id="sidebar-header">
+            <h1>API Docs</h1>
+        </div>
+`)
+
 	for _, req := range s.FlatList {
-		html.WriteString("<div class='req'>")
-		html.WriteString(fmt.Sprintf("<h2>%s</h2>", req.Path))
-		html.WriteString(fmt.Sprintf("<div><span class='method'>%s</span> <span class='url'>%s</span></div>", req.Request.Method, req.Request.URL.Raw))
-		if req.Request.Body != nil && req.Request.Body.Raw != "" {
-			html.WriteString("<h3>Body</h3><pre>" + req.Request.Body.Raw + "</pre>")
+		id := strings.ReplaceAll(req.Path, " ", "-")
+		html.WriteString(fmt.Sprintf("<a href='#%s' class='sidebar-item'>%s</a>", id, req.Path))
+	}
+	html.WriteString("</div><div id='main'><div class='container'>")
+
+	for _, req := range s.FlatList {
+		id := strings.ReplaceAll(req.Path, " ", "-")
+		html.WriteString(fmt.Sprintf("<div class='req-card' id='%s'>", id))
+		html.WriteString("<div class='req-header'>")
+		html.WriteString(fmt.Sprintf("<span class='method-badge method-%s'>%s</span>", req.Request.Method, req.Request.Method))
+		html.WriteString(fmt.Sprintf("<span class='req-path'>%s</span>", req.Path))
+		html.WriteString("</div>")
+
+		html.WriteString(fmt.Sprintf("<div class='url-box'>%s</div>", req.Request.URL.Raw))
+
+		if len(req.Request.Header) > 0 {
+			html.WriteString("<h3>Headers</h3>")
+			html.WriteString("<table class='table'><thead><tr><th>Key</th><th>Value</th></tr></thead><tbody>")
+			for _, h := range req.Request.Header {
+				html.WriteString(fmt.Sprintf("<tr><td><code>%s</code></td><td>%s</td></tr>", h.Key, h.Value))
+			}
+			html.WriteString("</tbody></table>")
 		}
+
+		if req.Request.Body != nil {
+			if req.Request.Body.Mode == "raw" && req.Request.Body.Raw != "" {
+				html.WriteString("<h3>Request Body (Raw)</h3>")
+				html.WriteString("<pre>" + req.Request.Body.Raw + "</pre>")
+			} else if req.Request.Body.Mode == "urlencoded" && len(req.Request.Body.UrlEncoded) > 0 {
+				html.WriteString("<h3>Request Body (x-www-form-urlencoded)</h3>")
+				html.WriteString("<table class='table'><thead><tr><th>Key</th><th>Value</th></tr></thead><tbody>")
+				for _, f := range req.Request.Body.UrlEncoded {
+					html.WriteString(fmt.Sprintf("<tr><td><code>%s</code></td><td>%s</td></tr>", f.Key, f.Value))
+				}
+				html.WriteString("</tbody></table>")
+			}
+		}
+
+		// Add cURL Snippet
+		html.WriteString("<h3>cURL Snippet</h3>")
+		curl := fmt.Sprintf("curl -X %s \"%s\"", req.Request.Method, req.Request.URL.Raw)
+		for _, h := range req.Request.Header {
+			curl += fmt.Sprintf(" \\\n  -H \"%s: %s\"", h.Key, h.Value)
+		}
+		if req.Request.Body != nil && req.Request.Body.Raw != "" {
+			curl += fmt.Sprintf(" \\\n  -d '%s'", req.Request.Body.Raw)
+		}
+		html.WriteString("<pre>" + curl + "</pre>")
+
 		html.WriteString("</div>")
 	}
-	html.WriteString("</body></html>")
+
+	html.WriteString("</div></div></body></html>")
 
 	w.Header().Set("Content-Type", "text/html")
 	w.Write([]byte(html.String()))

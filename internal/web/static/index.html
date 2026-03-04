@@ -1606,17 +1606,35 @@
             try {
                 let data = JSON.parse(cached.body);
                 
-                // 1. Handle Exclude Mode (starts with '-')
-                if (query.startsWith('-')) {
-                    const path = query.substring(1);
-                    const result = JSON.parse(JSON.stringify(data));
-                    excludePath(result, path);
-                    rBody.innerHTML = syntaxHighlight(result);
+                // Parse the query: handle multiple exclusions, main query, and pipes
+                // We split by space but respect brackets and braces
+                const parts = query.match(/(?:[^\s[\]{}]+|\[[^\]]*\]|\{[^}]*\})+/g) || [];
+                
+                let exclusions = [];
+                let remaining = [];
+                
+                parts.forEach(p => {
+                    if (p.startsWith('-')) exclusions.push(p.substring(1));
+                    else remaining.push(p);
+                });
+
+                // 1. Apply Exclusions first on a clone of the data
+                if (exclusions.length > 0) {
+                    data = JSON.parse(JSON.stringify(data));
+                    exclusions.forEach(path => excludePath(data, path));
+                }
+
+                // If only exclusions were provided, show the result
+                if (remaining.length === 0) {
+                    rBody.innerHTML = syntaxHighlight(data);
                     return;
                 }
 
+                // Join the rest back to handle piping correctly
+                const restQuery = remaining.join(' ');
+                
                 // 2. Split Path and Pipes
-                const pipeParts = query.split('|').map(s => s.trim());
+                const pipeParts = restQuery.split('|').map(s => s.trim());
                 let mainQuery = pipeParts.shift();
                 
                 // 3. Resolve Path (including Deep Search **)
@@ -1624,7 +1642,7 @@
 
                 // 4. Apply Pipes
                 pipeParts.forEach(pipe => {
-                    result = applyPipe(result, pipe);
+                    if (pipe) result = applyPipe(result, pipe);
                 });
 
                 rBody.innerHTML = (result !== undefined && result !== null) ? syntaxHighlight(result) : '<div style="color:var(--method-delete)">No matches found</div>';
