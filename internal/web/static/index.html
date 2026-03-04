@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PostIt - Web Client</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         :root {
             --bg-app: #0d0d0f;
@@ -24,7 +25,7 @@
             --method-delete: #f87171;
             --method-patch: #a78bfa;
             --radius: 6px;
-            --transition: all 0.2s ease;
+            --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         body {
@@ -38,6 +39,34 @@
             -webkit-font-smoothing: antialiased;
         }
 
+        /* Toast System */
+        #toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .toast {
+            background: var(--bg-sidebar);
+            border: 1px solid var(--border-color);
+            padding: 12px 16px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            color: var(--text-main);
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: slideIn 0.3s ease forwards;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
         /* Sidebar */
         #sidebar {
             width: 320px;
@@ -48,9 +77,32 @@
             min-width: 200px;
         }
 
-        #sidebar-search-container {
-            padding: 16px;
+        #sidebar-top-tools {
+            padding: 8px 12px;
+            display: flex;
+            gap: 6px;
             border-bottom: 1px solid var(--border-color);
+            flex-wrap: wrap;
+        }
+
+        #sidebar-search-container {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .search-input-group {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .search-input-group i {
+            position: absolute;
+            left: 10px;
+            color: var(--text-secondary);
+            pointer-events: none;
+            width: 14px;
+            height: 14px;
         }
 
         #sidebar-search {
@@ -58,32 +110,43 @@
             background: var(--bg-input);
             border: 1px solid var(--border-color);
             color: white;
-            padding: 8px 12px;
+            padding: 6px 12px 6px 32px;
             border-radius: var(--radius);
-            font-size: 13px;
+            font-size: 12px;
             box-sizing: border-box;
             outline: none;
             transition: var(--transition);
         }
-        #sidebar-search:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
+        #sidebar-search:focus { border-color: var(--border-focus); }
 
         #sidebar-tabs {
             display: flex;
-            padding: 4px 16px; gap: 16px;
+            padding: 0 12px;
             border-bottom: 1px solid var(--border-color);
         }
 
         #sidebar-tabs .tab {
-            padding: 8px 0;
-            font-size: 11px; font-weight: 600;
-            letter-spacing: 0.05em; color: var(--text-secondary);
-            cursor: pointer; border-bottom: 2px solid transparent;
+            flex: 1;
+            padding: 10px 0;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
             transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            white-space: nowrap;
+            overflow: hidden;
         }
         #sidebar-tabs .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+        #sidebar-tabs .tab i { width: 12px; height: 12px; flex-shrink: 0; }
 
         #sidebar-header {
-            padding: 12px 16px; font-size: 10px; font-weight: 800;
+            padding: 16px; font-size: 10px; font-weight: 800;
             text-transform: uppercase; letter-spacing: 0.05em;
             color: var(--text-secondary); display: flex;
             justify-content: space-between; align-items: center;
@@ -91,84 +154,142 @@
 
         .sidebar-action-btn {
             background: var(--bg-input); border: 1px solid var(--border-color);
-            color: var(--text-main); cursor: pointer; padding: 4px 10px;
+            color: var(--text-main); cursor: pointer; padding: 0 10px;
             border-radius: 4px; font-size: 11px; font-weight: 500;
-            transition: var(--transition);
+            transition: var(--transition); display: flex; align-items: center; justify-content: center; gap: 6px;
+            height: 32px; min-width: 32px; box-sizing: border-box;
         }
         .sidebar-action-btn:hover { background: var(--bg-item-hover); border-color: var(--border-focus); }
+        .sidebar-action-btn i { width: 14px; height: 14px; flex-shrink: 0; }
 
         #collection-tree, #history-list { flex: 1; overflow-y: auto; padding: 8px 0; }
 
         .folder {
-            padding: 8px 16px; cursor: pointer; font-size: 13px; font-weight: 500;
+            padding: 10px 16px; cursor: pointer; font-size: 13px; font-weight: 500;
             color: var(--text-main); display: flex; align-items: center; gap: 10px;
             transition: var(--transition); border-radius: 4px; margin: 0 8px;
         }
         .folder:hover { background: var(--bg-item-hover); }
-        .folder::before {
-            content: ''; display: inline-block; width: 6px; height: 6px;
-            border-right: 2px solid var(--text-secondary); border-bottom: 2px solid var(--text-secondary);
-            transform: rotate(-45deg); transition: transform 0.2s ease; margin-right: 12px; margin-left: 4px;
-        }
-        .folder.expanded::before { transform: rotate(45deg); }
-        .folder-content { padding-left: 20px; display: none; }
+        .folder i.folder-icon { color: var(--text-secondary); opacity: 0.7; }
+        .folder i.chevron { transition: transform 0.2s ease; margin-right: 4px; }
+        .folder.expanded i.chevron { transform: rotate(90deg); }
+        .folder-content { padding-left: 12px; display: none; }
         .folder-content.show { display: block; }
 
         .request-item {
             padding: 8px 16px; cursor: pointer; font-size: 13px;
             display: flex; align-items: center; gap: 12px;
-            transition: var(--transition); border-radius: 4px; margin: 0 8px;
+            transition: var(--transition); border-radius: 4px; margin: 2px 8px;
         }
         .request-item:hover { background: var(--bg-item-hover); }
         .request-item.active { background: var(--bg-item-active); color: white; }
 
-        .method-tag { font-size: 9px; font-weight: 700; width: 32px; text-align: center; flex-shrink: 0; }
+        .method-tag { font-size: 9px; font-weight: 800; width: 32px; text-align: center; flex-shrink: 0; }
         .method-GET { color: var(--method-get); }
         .method-POST { color: var(--method-post); }
         .method-PUT { color: var(--method-put); }
         .method-DELETE { color: var(--method-delete); }
         .method-PATCH { color: var(--method-patch); }
-        .status-0 { color: #eb2013; }
 
         /* Main Content */
         #main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg-app); }
-        #request-header { padding: 24px; border-bottom: 1px solid var(--border-color); }
-        .toolbar { display: flex; gap: 12px; margin-bottom: 16px; }
-        .btn-primary { background: var(--accent); color: white; border: none; padding: 8px 16px; border-radius: var(--radius); font-weight: 600; font-size: 13px; cursor: pointer; transition: var(--transition); }
+        #request-header { padding: 16px 24px; border-bottom: 1px solid var(--border-color); }
+        .toolbar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+        
+        .btn-primary, .btn-secondary { 
+            height: 32px;
+            padding: 0 16px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            box-sizing: border-box;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .btn-primary { background: var(--accent); color: white; border: none; font-weight: 600; }
         .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
-        .btn-secondary { background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: var(--radius); font-weight: 500; font-size: 13px; cursor: pointer; transition: var(--transition); }
+        
+        .btn-secondary { background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-color); font-weight: 500; }
         .btn-secondary:hover { background: var(--bg-item-hover); border-color: var(--border-focus); }
 
-        .url-bar-container { display: flex; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius); overflow: hidden; transition: var(--transition); }
+        .url-bar-container { 
+            display: flex; background: var(--bg-input); border: 1px solid var(--border-color); 
+            border-radius: var(--radius); overflow: hidden; transition: var(--transition);
+            height: 40px;
+        }
         .url-bar-container:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 2px rgba(255,255,255,0.05); }
-        #req-method-display { padding: 0 16px; font-weight: 700; font-size: 12px; display: flex; align-items: center; background: var(--bg-item-active); min-width: 60px; justify-content: center; border-right: 1px solid var(--border-color); }
-        #req-url-input { flex: 1; background: transparent; border: none; color: var(--text-main); padding: 10px 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; outline: none; }
-        #send-btn { background: var(--accent); color: white; border: none; padding: 0 24px; font-weight: 700; cursor: pointer; font-size: 13px; transition: var(--transition); }
+        #req-method-display { 
+            padding: 0 16px; font-weight: 800; font-size: 11px; display: flex; 
+            align-items: center; background: var(--bg-sidebar); min-width: 60px; 
+            justify-content: center; border-right: 1px solid var(--border-color); 
+            color: var(--accent);
+        }
+        #req-url-input { 
+            flex: 1; background: transparent; border: none; color: var(--text-main); 
+            padding: 12px 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; outline: none; 
+        }
+        #send-btn { 
+            background: var(--accent); color: white; border: none; padding: 0 24px; 
+            font-weight: 700; cursor: pointer; font-size: 13px; transition: var(--transition); 
+        }
         #send-btn:hover { background: var(--accent-hover); }
 
         .tabs-container { padding: 0 24px; border-bottom: 1px solid var(--border-color); display: flex; gap: 24px; }
-        .tabs-container .tab { padding: 14px 0; font-size: 13px; font-weight: 500; color: var(--text-secondary); cursor: pointer; border-bottom: 2px solid transparent; transition: var(--transition); }
+        .tabs-container .tab { 
+            padding: 14px 0; font-size: 13px; font-weight: 500; color: var(--text-secondary); 
+            cursor: pointer; border-bottom: 2px solid transparent; transition: var(--transition); 
+        }
         .tabs-container .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
         #editor-container { flex: 1; padding: 24px; display: flex; flex-direction: column; overflow: hidden; }
         .pane { display: none; height: 100%; }
         .pane.active { display: flex; flex-direction: column; }
 
-        .code-editor-container { flex: 1; position: relative; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
-        .code-editor-textarea, .code-editor-pre { position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.6; white-space: pre; border: none; outline: none; box-sizing: border-box; background: transparent; overflow: auto; }
+        .code-editor-container { 
+            flex: 1; position: relative; background: var(--bg-input); border: 1px solid var(--border-color); 
+            border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; 
+        }
+        .code-editor-textarea, .code-editor-pre { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0; 
+            padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; 
+            line-height: 1.6; white-space: pre; border: none; outline: none; 
+            box-sizing: border-box; background: transparent; overflow: auto; 
+        }
         .code-editor-textarea { color: transparent; caret-color: white; resize: none; z-index: 2; white-space: pre; }
         .code-editor-pre { color: #d1d1d1; z-index: 1; pointer-events: none; overflow: hidden; }
 
-        textarea#req-prerequest-input, textarea#req-tests-input { flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); color: #d1d1d1; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.6; border-radius: var(--radius); resize: none; outline: none; }
+        textarea#req-prerequest-input, textarea#req-tests-input { 
+            flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); 
+            color: #d1d1d1; padding: 16px; font-family: 'JetBrains Mono', monospace; 
+            font-size: 13px; line-height: 1.6; border-radius: var(--radius); resize: none; outline: none; 
+        }
 
         .header-row { display: flex; gap: 8px; margin-bottom: 8px; }
-        .header-row input { background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 8px 12px; font-size: 12px; border-radius: 4px; flex: 1; outline: none; }
+        .header-row input { 
+            background: var(--bg-input); border: 1px solid var(--border-color); 
+            color: white; padding: 8px 12px; font-size: 12px; border-radius: 4px; flex: 1; outline: none; 
+        }
 
         /* Response */
         #response-container { height: 40%; background: #09090b; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; }
-        #response-header { padding: 8px 24px; display: flex; justify-content: space-between; align-items: center; background: var(--bg-sidebar); border-bottom: 1px solid var(--border-color); }
+        #response-header { 
+            padding: 4px 24px; display: flex; justify-content: space-between; 
+            align-items: center; background: var(--bg-sidebar); border-bottom: 1px solid var(--border-color); 
+        }
         #response-meta { font-size: 12px; color: var(--text-secondary); }
-        #response-body { flex: 1; padding: 16px; overflow: auto; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #d1d1d1; white-space: pre-wrap; margin: 0; }
+        #response-body-container { flex: 1; position: relative; overflow: hidden; }
+        #response-body { 
+            height: 100%; padding: 16px; overflow: auto; font-family: 'JetBrains Mono', monospace; 
+            font-size: 13px; color: #d1d1d1; white-space: pre-wrap; margin: 0; 
+        }
+        .response-actions { 
+            position: absolute; top: 12px; right: 24px; display: flex; gap: 8px; z-index: 10; opacity: 0; transition: opacity 0.2s;
+        }
+        #response-body-container:hover .response-actions { opacity: 1; }
 
         .json-key { color: #9cdcfe; }
         .json-string { color: #ce9178; }
@@ -176,17 +297,18 @@
         .json-boolean { color: #569cd6; }
         .json-null { color: #569cd6; }
 
-        .filter-bar { background: var(--bg-sidebar); padding: 6px 16px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; }
-        .filter-bar span { font-size: 10px; font-weight: 800; color: var(--text-secondary); }
+        .filter-bar { background: var(--bg-sidebar); padding: 8px 16px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; }
+        .filter-bar span { font-size: 10px; font-weight: 800; color: var(--text-secondary); letter-spacing: 0.1em; }
         .filter-bar input { flex: 1; background: transparent; border: none; color: #4ade80; font-family: 'JetBrains Mono', monospace; font-size: 12px; outline: none; }
 
-        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(4px); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); display: none; justify-content: center; align-items: center; z-index: 1000; }
         .modal-overlay.show { display: flex; }
-        .modal { background: var(--bg-sidebar); border: 1px solid var(--border-color); padding: 32px; border-radius: 12px; width: 440px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
-        .modal-title { margin: 0 0 24px 0; font-size: 18px; font-weight: 600; color: var(--accent); }
+        .modal { background: var(--bg-sidebar); border: 1px solid var(--border-color); padding: 32px; border-radius: 12px; width: 440px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+        .modal-title { margin: 0 0 24px 0; font-size: 20px; font-weight: 600; color: var(--accent); display: flex; align-items: center; gap: 12px; }
         .form-group { margin-bottom: 20px; }
-        .form-group label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; }
-        .form-group input, .form-group select { width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 10px 12px; border-radius: var(--radius); box-sizing: border-box; outline: none; }
+        .form-group label { display: block; font-size: 11px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .form-group input, .form-group select { width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius); box-sizing: border-box; outline: none; transition: var(--transition); }
+        .form-group input:focus { border-color: var(--accent); }
         .modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 32px; }
 
         /* History */
@@ -208,7 +330,6 @@
         .resizer-v { height: 4px; cursor: row-resize; background: transparent; transition: background 0.2s; z-index: 10; }
         .resizer-v:hover, .resizer-v.active { background: var(--accent); }
 
-        #sidebar-top-tools { padding: 8px 16px; display: flex; gap: 8px; border-bottom: 1px solid var(--border-color); }
         #context-menu { position: fixed; background: var(--bg-sidebar); border: 1px solid var(--border-color); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.4); z-index: 2000; display: none; flex-direction: column; padding: 4px; border-radius: 8px; min-width: 160px; }
         .context-menu-item { padding: 8px 12px; font-size: 12px; cursor: pointer; border-radius: 4px; color: var(--text-main); transition: var(--transition); }
         .context-menu-item:hover { background: var(--bg-item-hover); color: var(--accent); }
@@ -217,26 +338,31 @@
     </style>
 </head>
 <body>
+    <div id="toast-container"></div>
+
     <div id="sidebar">
         <div id="sidebar-top-tools">
-            <a href="/docs.html" target="_blank" class="sidebar-action-btn" style="text-decoration: none; flex: 1; text-align: center;" title="Static Documentation">Docs</a>
-            <a href="/api/docs/generate" target="_blank" class="sidebar-action-btn" style="text-decoration: none; flex: 1; text-align: center;" title="Generate API Docs">Publish</a>
-            <button class="sidebar-action-btn" style="flex: 1;" onclick="showVariablesModal()">Variables</button>
-            <button class="sidebar-action-btn" onclick="showImportModal()">Import</button>
-            <button class="sidebar-action-btn" title="New Request" onclick="showNewModal()">+ New</button>
+            <a href="/docs.html" target="_blank" class="sidebar-action-btn" title="Static Documentation"><i data-lucide="book-open"></i></a>
+            <a href="/api/docs/generate" target="_blank" class="sidebar-action-btn" title="Generate API Docs"><i data-lucide="external-link"></i></a>
+            <button class="sidebar-action-btn" onclick="showVariablesModal()" title="Global Variables"><i data-lucide="database"></i></button>
+            <button class="sidebar-action-btn" onclick="showImportModal()" title="Import cURL"><i data-lucide="download"></i></button>
+            <button class="sidebar-action-btn" title="New Request" onclick="showNewModal()"><i data-lucide="plus"></i></button>
         </div>
         <div id="sidebar-search-container">
-            <input type="text" id="sidebar-search" placeholder="Search requests..." oninput="filterSidebar(this.value)">
+            <div class="search-input-group">
+                <i data-lucide="search"></i>
+                <input type="text" id="sidebar-search" placeholder="Search requests..." oninput="filterSidebar(this.value)">
+            </div>
         </div>
         <div id="sidebar-tabs">
-            <div id="tab-collections" class="tab active" onclick="switchSidebar('collections')">COLLECTIONS</div>
-            <div id="tab-history" class="tab" onclick="switchSidebar('history')">HISTORY</div>
-            <div id="tab-workflows" class="tab" onclick="switchSidebar('workflows')">WORKFLOWS</div>
+            <div id="tab-collections" class="tab active" onclick="switchSidebar('collections')"><i data-lucide="folder"></i> COLLECTIONS</div>
+            <div id="tab-history" class="tab" onclick="switchSidebar('history')"><i data-lucide="history"></i> HISTORY</div>
+            <div id="tab-workflows" class="tab" onclick="switchSidebar('workflows')"><i data-lucide="git-branch"></i> WORKFLOWS</div>
         </div>
         <div id="sidebar-header">
             <span id="sidebar-title">COLLECTIONS</span>
             <div id="history-actions" style="display: none;">
-                <button class="sidebar-action-btn" onclick="clearHistory()">Clear History</button>
+                <button class="sidebar-action-btn" onclick="clearHistory()"><i data-lucide="trash-2"></i> Clear</button>
             </div>
         </div>
         <div id="collection-tree"></div>
@@ -250,14 +376,14 @@
             <div id="workflow-toolbar" style="padding: 16px 24px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
                 <div style="display: flex; gap: 12px; align-items: center;">
                     <h2 id="workflow-title" style="margin: 0; font-size: 16px; font-weight: 600;">New Workflow</h2>
-                    <button class="btn-secondary" style="padding: 4px 12px;" onclick="saveWorkflow()">Save</button>
+                    <button class="btn-secondary" onclick="saveWorkflow()"><i data-lucide="save"></i> Save</button>
                     <div style="width: 1px; height: 20px; background: var(--border-color); margin: 0 8px;"></div>
-                    <button class="sidebar-action-btn" onclick="addNode('request')">+ Request</button>
-                    <button class="sidebar-action-btn" onclick="addNode('wait')">+ Wait</button>
-                    <button class="sidebar-action-btn" onclick="addNode('condition')">+ If/Else</button>
-                    <button class="sidebar-action-btn" onclick="addNode('loop')">+ Loop</button>
+                    <button class="sidebar-action-btn" onclick="addNode('request')"><i data-lucide="plus-circle"></i> Request</button>
+                    <button class="sidebar-action-btn" onclick="addNode('wait')"><i data-lucide="clock"></i> Wait</button>
+                    <button class="sidebar-action-btn" onclick="addNode('condition')"><i data-lucide="split"></i> If/Else</button>
+                    <button class="sidebar-action-btn" onclick="addNode('loop')"><i data-lucide="rotate-ccw"></i> Loop</button>
                 </div>
-                <button class="btn-primary" onclick="runWorkflow()">Run Workflow</button>
+                <button class="btn-primary" onclick="runWorkflow()"><i data-lucide="play"></i> Run Workflow</button>
             </div>
             <div id="workflow-canvas-container" style="flex: 1; position: relative; overflow: hidden; background-image: radial-gradient(var(--border-color) 1px, transparent 1px); background-size: 20px 20px;">
                 <svg id="workflow-svg" style="width: 100%; height: 100%; cursor: crosshair;">
@@ -271,7 +397,7 @@
                 </svg>
             </div>
             <div id="workflow-logs" style="height: 200px; background: var(--bg-sidebar); border-top: 1px solid var(--border-color); overflow-y: auto; padding: 16px; font-family: monospace; font-size: 12px;">
-                <div style="color: var(--text-secondary); margin-bottom: 8px; font-weight: 700; text-transform: uppercase;">Execution Logs</div>
+                <div style="color: var(--text-secondary); margin-bottom: 8px; font-weight: 700; text-transform: uppercase; display: flex; align-items: center; gap: 8px;"><i data-lucide="terminal" style="width: 14px;"></i> Execution Logs</div>
                 <div id="workflow-logs-content"></div>
             </div>
         </div>
@@ -280,18 +406,18 @@
             <div id="request-header">
                 <div class="toolbar" style="justify-content: space-between;">
                     <div style="display: flex; gap: 12px;">
-                        <button class="btn-primary" onclick="saveCurrentRequest()">Save Changes</button>
-                        <button class="btn-secondary" onclick="showCodeModal()">Code Snippet</button>
+                        <button class="btn-primary" onclick="saveCurrentRequest()"><i data-lucide="save"></i> Save Changes</button>
+                        <button class="btn-secondary" onclick="showCodeModal()"><i data-lucide="code"></i> Code Snippet</button>
                     </div>
                     <div style="display: flex; gap: 12px; align-items: center;">
-                        <button id="proxy-btn" class="sidebar-action-btn" style="color: var(--text-secondary);" onclick="toggleProxy()">📡 Start Proxy</button>
-                        <div id="env-selector-container" style="display: flex; align-items: center; gap: 8px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 4px; padding-left: 12px;">
+                        <button id="proxy-btn" class="btn-secondary" style="color: var(--text-secondary); padding: 0 12px;" onclick="toggleProxy()"><i data-lucide="radio"></i> Start Proxy</button>
+                        <div id="env-selector-container" style="display: flex; align-items: center; gap: 8px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 4px; padding-left: 12px; height: 32px;">
                             <span style="font-size: 11px; color: var(--text-secondary); font-weight: 700;">ENV</span>
-                            <select id="env-active-select" style="background: transparent; border: none; color: white; font-size: 12px; padding: 6px 12px; outline: none;" onchange="switchActiveEnv(this.value)">
+                            <select id="env-active-select" style="background: transparent; border: none; color: white; font-size: 12px; padding: 0 12px; height: 100%; outline: none;" onchange="switchActiveEnv(this.value)">
                                 <option value="">No Environment</option>
                             </select>
                         </div>
-                        <button class="btn-secondary" onclick="showEnvironmentsModal()">Environments</button>
+                        <button class="btn-secondary" onclick="showEnvironmentsModal()"><i data-lucide="layers"></i> Environments</button>
                     </div>
                 </div>
                 <div class="url-bar-container">
@@ -315,10 +441,10 @@
                 <div id="pane-body" class="pane active">
                     <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
                         <div style="display: flex; gap: 16px;">
-                            <label style="cursor:pointer"><input type="radio" name="body-mode" value="raw" checked onclick="switchBodyMode('raw')"> raw</label>
-                            <label style="cursor:pointer"><input type="radio" name="body-mode" value="urlencoded" onclick="switchBodyMode('urlencoded')"> x-www-form-urlencoded</label>
+                            <label style="cursor:pointer; display: flex; align-items: center; gap: 6px;"><input type="radio" name="body-mode" value="raw" checked onclick="switchBodyMode('raw')"> raw</label>
+                            <label style="cursor:pointer; display: flex; align-items: center; gap: 6px;"><input type="radio" name="body-mode" value="urlencoded" onclick="switchBodyMode('urlencoded')"> x-www-form-urlencoded</label>
                         </div>
-                        <button class="sidebar-action-btn" title="Beautify JSON" onclick="beautifyRequestJson()">Beautify JSON</button>
+                        <button class="sidebar-action-btn" title="Beautify JSON" onclick="beautifyRequestJson()"><i data-lucide="sparkles"></i> Beautify JSON</button>
                     </div>
                     <div id="body-raw-container" class="code-editor-container">
                         <pre id="req-body-highlight" class="code-editor-pre"></pre>
@@ -326,25 +452,27 @@
                                   oninput="updateRequestHighlight()" onscroll="syncEditorScroll()"></textarea>
                     </div>
                     <div id="body-urlencoded-container" style="flex: 1; display: none; flex-direction: column; overflow-y: auto;">
-                        <div style="margin-bottom: 12px;"><button class="sidebar-action-btn" onclick="addUrlencodedRow()">+ Add Field</button></div>
+                        <div style="margin-bottom: 12px;"><button class="sidebar-action-btn" onclick="addUrlencodedRow()"><i data-lucide="plus"></i> Add Field</button></div>
                         <div id="req-urlencoded-list"></div>
                     </div>
                 </div>
                 <div id="pane-headers" class="pane">
-                    <div style="margin-bottom: 16px;"><button class="sidebar-action-btn" onclick="addHeaderRow()">+ Add Header</button></div>
+                    <div style="margin-bottom: 16px;"><button class="sidebar-action-btn" onclick="addHeaderRow()"><i data-lucide="plus"></i> Add Header</button></div>
                     <div id="req-headers-list"></div>
                 </div>
                 <div id="pane-mocks" class="pane">
-                    <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">Mock URL: <code id="mock-url-display" style="background: var(--bg-item-active); padding: 4px 8px; border-radius: 4px; color: var(--accent);">/mock/...</code></div>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                        <i data-lucide="server" style="width: 14px;"></i> Mock URL: <code id="mock-url-display" style="background: var(--bg-item-active); padding: 4px 8px; border-radius: 4px; color: var(--accent);">/mock/...</code>
+                    </div>
                     <div id="mocks-list" style="overflow-y: auto; flex: 1;"></div>
                 </div>
                 <div id="pane-hammer" class="pane">
                     <div style="padding: 16px; background: var(--bg-sidebar); border-radius: 8px; border: 1px solid var(--border-color); flex: 1; display: flex; flex-direction: column; overflow: hidden;">
-                        <div style="font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 16px;">Hammer (Load Testing)</div>
+                        <div style="font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 10px;"><i data-lucide="zap"></i> Hammer (Load Testing)</div>
                         <div style="display: flex; gap: 16px; margin-bottom: 16px;">
                             <div class="form-group" style="margin-bottom: 0; flex: 1;"><label>Workers</label><input type="number" id="hammer-workers" value="10"></div>
                             <div class="form-group" style="margin-bottom: 0; flex: 1;"><label>Duration (Sec)</label><input type="number" id="hammer-duration" value="5"></div>
-                            <div style="display: flex; align-items: flex-end;"><button class="btn-primary" onclick="runHammer()">Start Hammering</button></div>
+                            <div style="display: flex; align-items: flex-end;"><button class="btn-primary" onclick="runHammer()"><i data-lucide="play"></i> Start Hammering</button></div>
                         </div>
                         <div id="hammer-dashboard" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; display: none;">
                             <div style="background: var(--bg-app); padding: 12px; border-radius: 6px; text-align: center;"><div style="font-size: 10px; color: var(--text-secondary); text-transform: uppercase;">Requests</div><div id="h-total" style="font-size: 18px; font-weight: 700; color: var(--accent);">0</div></div>
@@ -360,19 +488,19 @@
                 </div>
                 <div id="pane-sql" class="pane">
                     <div style="padding: 16px; background: var(--bg-sidebar); border-radius: 8px; border: 1px solid var(--border-color); flex: 1; display: flex; flex-direction: column;">
-                        <div style="font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 16px;">SQL Sidekick (SQLite)</div>
+                        <div style="font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 10px;"><i data-lucide="database"></i> SQL Sidekick (SQLite)</div>
                         <div class="form-group"><label>DB Path (SQLite / Postgres / MySQL)</label><input type="text" id="sql-db-path" placeholder="C:/path/to/db.sqlite or postgres://user:pass@host/db"></div>
                         <div style="display: flex; gap: 16px; margin-bottom: 16px;">
                             <div class="form-group" style="margin-bottom: 0; flex: 1;"><label>Extract to Var</label><input type="text" id="sql-target-var" placeholder="e.g. user_id"></div>
                             <div class="form-group" style="margin-bottom: 0; flex: 1;"><label>From Column</label><input type="text" id="sql-target-col" placeholder="e.g. id"></div>
                         </div>
                         <div class="form-group" style="flex: 1; display: flex; flex-direction: column;"><label>SQL Query</label><textarea id="sql-query" style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius); resize: none; outline: none; font-family: monospace;"></textarea></div>
-                        <div style="margin-top: 16px;"><button class="btn-primary" onclick="runSQL()">Execute Query</button></div>
+                        <div style="margin-top: 16px;"><button class="btn-primary" onclick="runSQL()"><i data-lucide="play"></i> Execute Query</button></div>
                         <div id="sql-results" style="margin-top: 24px; flex: 1; overflow: auto; border-top: 1px solid var(--border-color); padding-top: 16px;"></div>
                     </div>
                 </div>
-                <div id="pane-scripts" class="pane"><textarea id="req-prerequest-input" spellcheck="false" placeholder="// Pre-request Script"></textarea></div>
-                <div id="pane-tests" class="pane"><textarea id="req-tests-input" spellcheck="false" placeholder="// Post-request Script"></textarea></div>
+                <div id="pane-scripts" class="pane"><textarea id="req-prerequest-input" spellcheck="false" placeholder="// Pre-request Script (JavaScript)"></textarea></div>
+                <div id="pane-tests" class="pane"><textarea id="req-tests-input" spellcheck="false" placeholder="// Post-request Script (JavaScript)"></textarea></div>
             </div>
         </div>
 
@@ -380,22 +508,27 @@
 
         <div id="response-container">
             <div id="response-header">
-                <div class="tabs-container" style="border-bottom: none; padding: 0; gap: 16px;">
-                    <div class="tab active" style="padding: 10px 0; font-size: 11px;" onclick="switchResponseTab('body')">BODY</div>
-                    <div class="tab" style="padding: 10px 0; font-size: 11px;" onclick="switchResponseTab('headers')">HEADERS</div>
-                    <div class="tab" style="padding: 10px 0; font-size: 11px;" onclick="switchResponseTab('preview')">PREVIEW</div>
-                    <div class="tab" style="padding: 10px 0; font-size: 11px;" onclick="switchResponseTab('jwt')">JWT</div>
-                    <div class="tab" style="padding: 10px 0; font-size: 11px;" onclick="switchResponseTab('diff')">DIFF</div>
+                <div class="tabs-container" style="border-bottom: none; padding: 0; gap: 20px;">
+                    <div class="tab active" style="padding: 12px 0; font-size: 11px; font-weight: 700; text-transform: uppercase;" onclick="switchResponseTab('body')">BODY</div>
+                    <div class="tab" style="padding: 12px 0; font-size: 11px; font-weight: 700; text-transform: uppercase;" onclick="switchResponseTab('headers')">HEADERS</div>
+                    <div class="tab" style="padding: 12px 0; font-size: 11px; font-weight: 700; text-transform: uppercase;" onclick="switchResponseTab('preview')">PREVIEW</div>
+                    <div class="tab" style="padding: 12px 0; font-size: 11px; font-weight: 700; text-transform: uppercase;" onclick="switchResponseTab('jwt')">JWT</div>
+                    <div class="tab" style="padding: 12px 0; font-size: 11px; font-weight: 700; text-transform: uppercase;" onclick="switchResponseTab('diff')">DIFF</div>
                 </div>
                 <div id="response-meta"></div>
             </div>
             <div id="resp-pane-body" class="pane active">
                 <div class="filter-bar">
                     <span>FILTER</span>
-                    <input type="text" id="json-filter" placeholder="e.g. data.id" oninput="applyJsonFilter(this.value)">
-                    <button class="sidebar-action-btn" style="padding: 2px 8px;" onclick="beautifyResponseJson()">Beautify</button>
+                    <input type="text" id="json-filter" placeholder="e.g. data.id (supports paths, predicates, projections, and pipes)" oninput="applyJsonFilter(this.value)">
+                    <button class="sidebar-action-btn" style="padding: 4px 10px;" onclick="beautifyResponseJson()"><i data-lucide="sparkles"></i> Beautify</button>
                 </div>
-                <pre id="response-body">// Ready</pre>
+                <div id="response-body-container">
+                    <div class="response-actions">
+                        <button class="sidebar-action-btn" title="Copy to Clipboard" onclick="copyResponseToClipboard()"><i data-lucide="copy"></i> Copy</button>
+                    </div>
+                    <pre id="response-body">// Ready</pre>
+                </div>
             </div>
             <div id="resp-pane-headers" class="pane" style="padding: 16px; overflow: auto; font-family: monospace; font-size: 12px; color: var(--text-secondary);"></div>
             <div id="resp-pane-preview" class="pane" style="padding: 0; background: white;">
@@ -450,6 +583,36 @@
         let activeSidebar = 'collections';
         let workflows = [];
         let currentWorkflow = null;
+
+        // Toast System
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            let icon = 'info';
+            if (type === 'success') icon = 'check-circle';
+            if (type === 'error') icon = 'alert-circle';
+            
+            toast.innerHTML = `<i data-lucide="${icon}" style="width: 16px; height: 16px;"></i> <span>${message}</span>`;
+            container.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function copyResponseToClipboard() {
+            const el = document.getElementById('response-body');
+            const text = el.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Copied to clipboard!', 'success');
+            }).catch(err => {
+                showToast('Failed to copy', 'error');
+            });
+        }
 
         function syntaxHighlight(json) {
             if (!json) return "";
@@ -534,7 +697,7 @@
 
         function beautifyRequestJson() {
             const el = document.getElementById('req-body-input');
-            try { const obj = JSON.parse(el.value); el.value = JSON.stringify(obj, null, 4); updateRequestHighlight(); } catch (e) { alert("Invalid JSON"); }
+            try { const obj = JSON.parse(el.value); el.value = JSON.stringify(obj, null, 4); updateRequestHighlight(); } catch (e) { showToast("Invalid JSON", "error"); }
         }
 
         function beautifyResponseJson() {
@@ -542,7 +705,7 @@
             const cached = responseCache[currentRequest.path];
             if (!cached || !cached.body) return;
             const el = document.getElementById('response-body');
-            try { const obj = JSON.parse(el.textContent); el.innerHTML = syntaxHighlight(obj); } catch (e) { alert("Invalid JSON"); }
+            try { const obj = JSON.parse(el.textContent); el.innerHTML = syntaxHighlight(obj); } catch (e) { showToast("Invalid JSON", "error"); }
         }
 
         async function init() {
@@ -567,13 +730,14 @@
                 const custom = flatRequests.filter(r => !visited.has(r.path));
                 if (custom.length > 0) {
                     const folder = document.createElement('div');
-                    folder.className = 'folder'; folder.textContent = 'Custom Requests';
+                    folder.className = 'folder'; folder.innerHTML = `<i data-lucide="chevron-right" class="chevron"></i> <i data-lucide="folder" class="folder-icon"></i> <span>Custom Requests</span>`;
                     const content = document.createElement('div');
                     content.className = 'folder-content';
                     folder.onclick = () => { folder.classList.toggle('expanded'); content.classList.toggle('show'); };
                     custom.forEach(req => content.appendChild(createRequestNode(req.path, req.request.method, req.path.split(' > ').pop())));
                     treeContainer.appendChild(folder); treeContainer.appendChild(content);
                 }
+                lucide.createIcons();
             } catch (e) { console.error(e); }
         }
 
@@ -597,7 +761,10 @@
             if (tab === 'history') renderHistory();
             if (tab === 'workflows') renderWorkflows();
             if (tab === 'collections') init();
+            lucide.createIcons();
         }
+
+        let historyCache = [];
 
         async function renderHistory() {
             const list = document.getElementById('history-list');
@@ -605,8 +772,10 @@
             try {
                 const resp = await fetch('/api/history');
                 const history = await resp.json();
+                historyCache = history;
                 list.innerHTML = history.length === 0 ? '<div style="padding: 24px; color: var(--text-secondary); font-style: italic; text-align: center;">No history.</div>' : '';
-                history.reverse().forEach(item => {
+                history.slice().reverse().forEach((item, index) => {
+                    const realIndex = history.length - 1 - index;
                     const div = document.createElement('div');
                     div.className = 'request-item history-item';
                     let color = item.statusCode >= 400 || item.statusCode === 0 ? 'var(--method-delete)' : (item.statusCode >= 300 ? 'var(--method-post)' : 'var(--method-get)');
@@ -615,12 +784,57 @@
                         <div class="history-path">${item.path}</div>
                         <div class="history-url">${item.url}</div>
                         <div class="history-footer">${new Date(item.timestamp).toLocaleTimeString()} • ${item.duration}ms</div>
-                        <button class="sidebar-action-btn" style="position: absolute; right: 12px; top: 12px; padding: 2px 6px;" onclick="event.stopPropagation(); deleteHistoryItem('${item.timestamp}')">✕</button>
+                        <button class="sidebar-action-btn" style="position: absolute; right: 12px; top: 12px; padding: 4px;" onclick="event.stopPropagation(); deleteHistoryItem('${item.timestamp}')"><i data-lucide="x" style="width: 12px; height: 12px;"></i></button>
                     `;
-                    div.onclick = () => selectRequest(item.path);
+                    div.onclick = () => selectHistoryItem(realIndex);
                     list.appendChild(div);
                 });
+                lucide.createIcons();
             } catch (e) { list.innerHTML = '<div style="color:var(--method-delete); padding: 24px;">Error loading history</div>'; }
+        }
+
+        function selectHistoryItem(index) {
+            const item = historyCache[index];
+            if (!item) return;
+            
+            // First, try to find and select the request in the tree/editor
+            selectRequest(item.path);
+            
+            // Then override the response with the saved one
+            const rBody = document.getElementById('response-body');
+            const rHeaders = document.getElementById('resp-pane-headers');
+            const meta = document.getElementById('response-meta');
+            
+            let color = (item.statusCode >= 400 || item.statusCode === 0) ? 'var(--method-delete)' : 'var(--method-get)';
+            let mHtmlText = `<span style="color:${color};font-weight:700">${item.statusCode} ${item.statusText}</span> &bull; ${item.duration}ms (from history)`;
+            
+            let body = item.responseBody || '';
+            const h = item.responseHeaders || {};
+            const ct = (h['Content-Type'] || h['content-type'] || [])[0] || '';
+            let isJson = ct.includes('json');
+            
+            let displayBody = body;
+            if (isJson && body) {
+                try {
+                    displayBody = JSON.parse(body);
+                } catch (e) {}
+            }
+
+            rHeaders.innerHTML = Object.entries(h).map(([k, v]) => `<div><span style="color:var(--accent); font-weight:600;">${k}:</span> ${v.join(', ')}</div>`).join('');
+            meta.innerHTML = `<div style="display:flex;gap:12px;align-items:center"><span>${mHtmlText}</span><button class="sidebar-action-btn" onclick="setBaseline()">Baseline</button><button class="sidebar-action-btn" onclick="saveAsMock()">Mock</button></div>`;
+            rBody.innerHTML = isJson ? syntaxHighlight(displayBody) : body;
+            renderJWT(body, h);
+            
+            // Update cache for this path so it stays if we switch tabs
+            responseCache[item.path] = { 
+                body, 
+                headers: rHeaders.innerHTML, 
+                meta: mHtmlText, 
+                isJson, 
+                rawHeaders: h 
+            };
+            
+            lucide.createIcons();
         }
 
         async function deleteHistoryItem(ts) { await fetch('/api/history/delete', { method: 'POST', body: JSON.stringify({ timestamp: ts }) }); renderHistory(); }
@@ -629,7 +843,7 @@
         async function renderWorkflows() {
             const list = document.getElementById('collection-tree');
             if (activeSidebar !== 'workflows') return;
-            list.innerHTML = '<div style="padding: 16px;"><button class="btn-primary" style="width:100%" onclick="createNewWorkflow()">+ New Workflow</button></div>';
+            list.innerHTML = '<div style="padding: 16px;"><button class="btn-primary" style="width:100%" onclick="createNewWorkflow()"><i data-lucide="plus"></i> New Workflow</button></div>';
             try {
                 const resp = await fetch('/api/workflows');
                 workflows = await resp.json() || [];
@@ -637,10 +851,11 @@
                     const div = document.createElement('div');
                     div.className = 'folder';
                     div.style.paddingLeft = '16px';
-                    div.innerHTML = `<span>${w.name}</span>`;
+                    div.innerHTML = `<i data-lucide="git-branch" class="folder-icon"></i> <span>${w.name}</span>`;
                     div.onclick = () => selectWorkflow(w);
                     list.appendChild(div);
                 });
+                lucide.createIcons();
             } catch (e) { console.error(e); }
         }
 
@@ -714,7 +929,7 @@
         }
 
         function addNode(type) {
-            if (!currentWorkflow) return alert("Select a workflow first");
+            if (!currentWorkflow) return showToast("Select a workflow first", "error");
             if (type === 'request') {
                 const select = document.getElementById('workflow-request-select');
                 select.innerHTML = '';
@@ -861,7 +1076,7 @@
         document.getElementById('workflow-svg').onclick = null;
 
         async function saveWorkflows() { await fetch('/api/workflows', { method: 'POST', body: JSON.stringify(workflows) }); }
-        function saveWorkflow() { saveWorkflows(); alert("Workflow saved!"); }
+        function saveWorkflow() { saveWorkflows(); showToast("Workflow saved!", "success"); }
 
         async function runWorkflow() {
             if (!currentWorkflow) return;
@@ -886,7 +1101,7 @@
         let hammerChart = null;
 
         async function runHammer() {
-            if (!currentRequest) return alert("Select a request first");
+            if (!currentRequest) return showToast("Select a request first", "error");
             const workers = document.getElementById('hammer-workers').value;
             const duration = document.getElementById('hammer-duration').value;
             const resultsDiv = document.getElementById('hammer-results');
@@ -914,8 +1129,6 @@
                 document.getElementById('h-avg').textContent = (data.AverageLatency / 1000000).toFixed(1) + 'ms';
                 document.getElementById('h-p99').textContent = (data.P99Latency / 1000000).toFixed(1) + 'ms';
 
-                // For now, since the backend returns all at once, we simulate the "live" part by drawing the final state
-                // In a real live setup, we'd poll status during execution
                 hammerChart.data.labels = Array.from({length: 10}, (_, i) => i + 1);
                 hammerChart.data.datasets[0].data = Array(10).fill(data.RPS);
                 hammerChart.data.datasets[1].data = Array(10).fill(data.AverageLatency / 1000000);
@@ -1023,6 +1236,7 @@
                 document.getElementById('response-meta').innerHTML = `<div style="display:flex;gap:12px;align-items:center"><span>${cached.meta}</span><button class="sidebar-action-btn" onclick="setBaseline()">Baseline</button><button class="sidebar-action-btn" onclick="saveAsMock()">Mock</button></div>`;
                 renderJWT(cached.body, cached.rawHeaders || {});
             } else { document.getElementById('response-body').textContent = '// Ready'; document.getElementById('resp-pane-headers').innerHTML = ''; document.getElementById('response-meta').textContent = ''; }
+            lucide.createIcons();
         }
 
         async function saveCurrentRequest() {
@@ -1030,7 +1244,7 @@
             const urlencoded = Array.from(document.querySelectorAll('#req-urlencoded-list .header-row')).map(row => ({ key: row.querySelector('.urlencoded-key').value, value: row.querySelector('.urlencoded-value').value })).filter(u => u.key !== '');
             const headers = Array.from(document.querySelectorAll('#req-headers-list .header-row')).map(row => ({ key: row.querySelector('.header-key').value, value: row.querySelector('.header-value').value })).filter(h => h.key !== '');
             const resp = await fetch('/api/requests/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ oldPath: currentRequest.path, newPath: currentRequest.path, method: document.getElementById('req-method-display').textContent, url: document.getElementById('req-url-input').value, bodyMode: document.querySelector('input[name="body-mode"]:checked').value, bodyRaw: document.getElementById('req-body-input').value, urlencoded, headers, preRequestScript: document.getElementById('req-prerequest-input').value, testScript: document.getElementById('req-tests-input').value }) });
-            if (resp.ok) { const data = await resp.json(); const idx = flatRequests.findIndex(r => r.path === currentRequest.path); if (idx !== -1) { flatRequests[idx] = data; currentRequest = data; } alert("Saved!"); }
+            if (resp.ok) { const data = await resp.json(); const idx = flatRequests.findIndex(r => r.path === currentRequest.path); if (idx !== -1) { flatRequests[idx] = data; currentRequest = data; } showToast("Saved!", "success"); }
         }
 
         async function sendRequest() {
@@ -1050,8 +1264,8 @@
                 if (isJson && body) {
                     try {
                         const parsed = JSON.parse(body);
-                        displayBody = parsed; // syntaxHighlight will stringify it with indentation
-                        body = JSON.stringify(parsed, null, 4); // Store beautified in cache
+                        displayBody = parsed;
+                        body = JSON.stringify(parsed, null, 4);
                     } catch (e) {}
                 }
 
@@ -1061,6 +1275,7 @@
                 rBody.innerHTML = isJson ? syntaxHighlight(displayBody) : body;
                 renderJWT(body, h);
                 if (activeSidebar === 'history') renderHistory();
+                lucide.createIcons();
             } catch (e) { rBody.textContent = '// Error: ' + e.message; }
         }
 
@@ -1077,7 +1292,7 @@
             document.getElementById('body-urlencoded-container').style.display = mode === 'urlencoded' ? 'flex' : 'none'; 
         }
 
-        function setBaseline() { if (!currentRequest) return; const cached = responseCache[currentRequest.path]; if (!cached) return alert("Run request first"); baselineCache[currentRequest.path] = { ...cached }; alert("Baseline set!"); }
+        function setBaseline() { if (!currentRequest) return; const cached = responseCache[currentRequest.path]; if (!cached) return showToast("Run request first", "error"); baselineCache[currentRequest.path] = { ...cached }; showToast("Baseline set!", "success"); }
         function renderDiff() {
             if (!currentRequest) return; const current = responseCache[currentRequest.path]; const baseline = baselineCache[currentRequest.path];
             const bPre = document.getElementById('diff-baseline'); const cPre = document.getElementById('diff-current');
@@ -1085,7 +1300,7 @@
             bPre.textContent = baseline.body; cPre.textContent = current ? current.body : "";
         }
 
-        function showCodeModal() { if (!currentRequest) return alert("Select request"); document.getElementById('code-modal').classList.add('show'); generateSnippet(document.getElementById('snippet-lang').value); }
+        function showCodeModal() { if (!currentRequest) return showToast("Select request", "error"); document.getElementById('code-modal').classList.add('show'); generateSnippet(document.getElementById('snippet-lang').value); }
         function generateSnippet(lang) {
             const req = currentRequest.request; const body = req.body ? (req.body.raw || '') : '';
             let code = "";
@@ -1094,7 +1309,7 @@
             else if (lang === 'python') code = `import requests\nurl = "${req.url.raw}"\nres = requests.request("${req.method}", url, headers=${JSON.stringify(req.header || {})}, data="${body}")\nprint(res.text)`;
             document.getElementById('snippet-output').value = code;
         }
-        function copySnippet() { const el = document.getElementById('snippet-output'); el.select(); document.execCommand('copy'); alert("Copied!"); }
+        function copySnippet() { const el = document.getElementById('snippet-output'); el.select(); document.execCommand('copy'); showToast("Copied!", "success"); }
 
         async function saveAsMock() {
             if (!currentRequest) return; const cached = responseCache[currentRequest.path]; if (!cached) return;
@@ -1105,7 +1320,7 @@
             const hRows = document.querySelectorAll('#resp-pane-headers div');
             const h = Array.from(hRows).map(r => { const t = r.innerText; const i = t.indexOf(':'); return { key: t.substring(0, i).trim(), value: t.substring(i+1).trim() }; });
             const resp = await fetch('/api/mock/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: currentRequest.path, name, code, status, body: cached.body, headers: h, condition }) });
-            if (resp.ok) { alert("Mock saved!"); await init(); selectRequest(currentRequest.path); }
+            if (resp.ok) { showToast("Mock saved!", "success"); await init(); selectRequest(currentRequest.path); }
         }
 
         function showDuplicateModal() { document.getElementById('duplicate-path').value = menuTarget + " Copy"; document.getElementById('duplicate-modal').classList.add('show'); }
@@ -1201,12 +1416,14 @@
 
         async function switchActiveEnv(id) {
             await fetch('/api/environments/active', { method: 'POST', body: JSON.stringify({ id }) });
+            showToast("Environment switched", "info");
         }
 
         async function unlockVault() {
             const password = document.getElementById('vault-password').value;
             const resp = await fetch('/api/vault/unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-            if (resp.ok) { closeModal('vault-modal'); alert("Vault Unlocked!"); }
+            if (resp.ok) { closeModal('vault-modal'); showToast("Vault Unlocked!", "success"); showEnvironmentsModal(); }
+            else { showToast("Invalid Password", "error"); }
         }
 
         async function getVaultStatus() {
@@ -1222,10 +1439,11 @@
             
             const unlocked = await getVaultStatus();
             const header = document.querySelector('#environments-modal .modal-title');
-            header.innerHTML = `Manage Environments <button class="sidebar-action-btn" onclick="document.getElementById('vault-modal').classList.add('show')">${unlocked ? '🔓 Unlocked' : '🔒 Locked'}</button>`;
+            header.innerHTML = `<i data-lucide="layers"></i> Manage Environments <button class="sidebar-action-btn" onclick="document.getElementById('vault-modal').classList.add('show')">${unlocked ? '<i data-lucide="unlock"></i>' : '<i data-lucide="lock"></i>'}</button>`;
 
             envs.forEach(env => renderEnvEditor(env, unlocked));
             document.getElementById('environments-modal').classList.add('show');
+            lucide.createIcons();
         }
 
         function renderEnvEditor(env, unlocked) {
@@ -1279,7 +1497,7 @@
                     row.querySelector('.env-var-value').type = 'password';
                 }
             } else {
-                alert("Decryption requires full save or API usage.");
+                showToast("Decryption requires full save or API usage.", "info");
             }
         }
 
@@ -1324,7 +1542,7 @@
             }
             
             const resp = await fetch('/api/environments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(envs) });
-            if (resp.ok) { alert("All environments saved!"); }
+            if (resp.ok) { showToast("All environments saved!", "success"); }
         }
 
         document.addEventListener('keydown', (e) => {
@@ -1553,7 +1771,31 @@
             return res;
         }
 
+        function deepExclude(obj, targetKey) {
+            if (!obj || typeof obj !== 'object') return;
+            
+            if (Array.isArray(obj)) {
+                obj.forEach(item => deepExclude(item, targetKey));
+                return;
+            }
+
+            if (obj.hasOwnProperty(targetKey)) {
+                delete obj[targetKey];
+            }
+
+            for (let k in obj) {
+                if (typeof obj[k] === 'object') {
+                    deepExclude(obj[k], targetKey);
+                }
+            }
+        }
+
         function excludePath(obj, path) {
+            if (path.startsWith('**.')) {
+                const targetKey = path.substring(3);
+                deepExclude(obj, targetKey);
+                return;
+            }
             const parts = path.split('.');
             const last = parts.pop();
             let current = obj;
@@ -1574,7 +1816,7 @@
         async function importCurl() {
             const curl = document.getElementById('curl-input').value;
             const resp = await fetch('/api/import/curl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ curl }) });
-            if (resp.ok) { closeModal('import-modal'); await init(); alert("Imported!"); }
+            if (resp.ok) { closeModal('import-modal'); await init(); showToast("Imported!", "success"); }
         }
 
         let proxyInterval = null;
@@ -1588,19 +1830,21 @@
                 if (!port) return;
                 const resp = await fetch('/api/proxy/start', { method: 'POST', body: JSON.stringify({ port: parseInt(port) }) });
                 if (resp.ok) {
-                    btn.textContent = '🛑 Stop Proxy';
+                    btn.innerHTML = '<i data-lucide="radio"></i> Stop Proxy';
                     btn.style.color = 'var(--method-delete)';
                     proxyInterval = setInterval(init, 5000);
-                    alert(`Proxy started on port ${port}. Configure your app to use this proxy.`);
+                    showToast(`Proxy started on port ${port}.`, "success");
+                    lucide.createIcons();
                 } else {
-                    alert("Failed to start proxy: " + await resp.text());
+                    showToast("Failed to start proxy", "error");
                 }
             } else {
                 const resp = await fetch('/api/proxy/stop', { method: 'POST' });
                 if (resp.ok) {
-                    btn.textContent = '📡 Start Proxy';
+                    btn.innerHTML = '<i data-lucide="radio"></i> Start Proxy';
                     btn.style.color = 'var(--text-secondary)';
                     if (proxyInterval) clearInterval(proxyInterval);
+                    lucide.createIcons();
                 }
             }
         }
@@ -1610,12 +1854,13 @@
             const data = await r.json();
             const btn = document.getElementById('proxy-btn');
             if (data.running) {
-                btn.textContent = '🛑 Stop Proxy';
+                btn.innerHTML = '<i data-lucide="radio"></i> Stop Proxy';
                 btn.style.color = 'var(--method-delete)';
             } else {
-                btn.textContent = '📡 Start Proxy';
+                btn.innerHTML = '<i data-lucide="radio"></i> Start Proxy';
                 btn.style.color = 'var(--text-secondary)';
             }
+            lucide.createIcons();
         }
 
         init();

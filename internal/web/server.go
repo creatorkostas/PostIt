@@ -604,13 +604,15 @@ func (s *Server) handleSendRequest(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		history := s.Storage.LoadHistory()
 		record := models.HistoryRecord{
-			Timestamp:  javaTimeFromMillis(startTime),
-			Path:       target.Path,
-			Method:     target.Request.Method,
-			URL:        s.Processor.ResolveVariables(target.Request.URL.Raw),
-			StatusCode: statusCode,
-			StatusText: statusText,
-			Duration:   duration,
+			Timestamp:       javaTimeFromMillis(startTime),
+			Path:            target.Path,
+			Method:          target.Request.Method,
+			URL:             s.Processor.ResolveVariables(target.Request.URL.Raw),
+			StatusCode:      statusCode,
+			StatusText:      statusText,
+			Duration:        duration,
+			ResponseBody:    body,
+			ResponseHeaders: headers,
 		}
 		history = append(history, record)
 		s.Storage.SaveHistory(history)

@@ -7,6 +7,7 @@ import (
 	"postit/internal/processor"
 	"postit/internal/storage"
 	"strings"
+	"time"
 
 	"github.com/AlecAivazis/survey/v2"
 )
@@ -239,7 +240,28 @@ func (m *Menu) HandleRequestSelection(reqInfo *models.RequestInfo, allRequests *
 			m.Processor.RunScripts(reqInfo.Events, "prerequest", nil, nil, reqInfo.Request.Header)
 			m.Processor.RunScripts(reqInfo.Events, "test", nil, nil, reqInfo.Request.Header)
 			
+			startTime := time.Now()
 			respBody, respHeaders, statusCode, statusText := m.Client.ExecuteRequest(reqInfo.Request)
+			duration := time.Since(startTime).Milliseconds()
+
+			// Record History
+			go func() {
+				history := m.Storage.LoadHistory()
+				record := models.HistoryRecord{
+					Timestamp:       startTime,
+					Path:            reqInfo.Path,
+					Method:          reqInfo.Request.Method,
+					URL:             m.Processor.ResolveVariables(reqInfo.Request.URL.Raw),
+					StatusCode:      statusCode,
+					StatusText:      statusText,
+					Duration:        duration,
+					ResponseBody:    respBody,
+					ResponseHeaders: respHeaders,
+				}
+				history = append(history, record)
+				m.Storage.SaveHistory(history)
+			}()
+
 			fmt.Printf("\nResponse Status: %d %s\n", statusCode, statusText)
 			
 			if respBody != "" || len(respHeaders) > 0 {
