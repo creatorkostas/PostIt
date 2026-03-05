@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -10,7 +11,27 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func (c *Client) ExecuteSQL(connStr, query string) ([]string, [][]string, error) {
+func (c *Client) getDB(driver, connStr string) (*sql.DB, error) {
+	c.dbMu.Lock()
+	defer c.dbMu.Unlock()
+
+	if db, ok := c.dbPool[connStr]; ok {
+		if err := db.Ping(); err == nil {
+			return db, nil
+		}
+		db.Close()
+		delete(c.dbPool, connStr)
+	}
+
+	db, err := sql.Open(driver, connStr)
+	if err != nil {
+		return nil, err
+	}
+	c.dbPool[connStr] = db
+	return db, nil
+}
+
+func (c *Client) ExecuteSQL(ctx context.Context, connStr, query string) ([]string, [][]string, error) {
 	if connStr == "" || query == "" {
 		return nil, nil, fmt.Errorf("Connection string and query are required")
 	}
@@ -22,13 +43,12 @@ func (c *Client) ExecuteSQL(connStr, query string) ([]string, [][]string, error)
 		driver = "mysql"
 	}
 
-	db, err := sql.Open(driver, connStr)
+	db, err := c.getDB(driver, connStr)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer db.Close()
 
-	rows, err := db.Query(query)
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, nil, err
 	}

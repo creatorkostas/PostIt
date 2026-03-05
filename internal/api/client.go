@@ -1,12 +1,15 @@
 package api
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"postit/internal/models"
 	"postit/internal/processor"
 	"postit/internal/storage"
 	"strings"
+	"sync"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -14,17 +17,32 @@ import (
 type Client struct {
 	Storage   *storage.Manager
 	Processor *processor.ScriptProcessor
+	dbPool    map[string]*sql.DB
+	dbMu      sync.Mutex
 }
 
 func NewClient(store *storage.Manager, proc *processor.ScriptProcessor) *Client {
-	return &Client{Storage: store, Processor: proc}
+	return &Client{
+		Storage:   store, 
+		Processor: proc,
+		dbPool:    make(map[string]*sql.DB),
+	}
 }
 
-func (c *Client) ExecuteRequest(req *models.Request) (string, map[string][]string, int, string) {
+func (c *Client) Close() error {
+	c.dbMu.Lock()
+	defer c.dbMu.Unlock()
+	for _, db := range c.dbPool {
+		db.Close()
+	}
+	return nil
+}
+
+func (c *Client) ExecuteRequest(ctx context.Context, req *models.Request) (string, map[string][]string, int, string) {
 	client := resty.New()
 	url := c.Processor.ResolveVariables(req.URL.Raw)
 	method := strings.ToUpper(req.Method)
-	r := client.R()
+	r := client.R().SetContext(ctx)
 
 	contentType := ""
 	if req.Body != nil {

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"postit/internal/api"
@@ -103,7 +104,7 @@ func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.Reque
 	// Status/Info Area
 	t.Status = tview.NewTextView().SetDynamicColors(true)
 	t.Status.SetBorder(false)
-	t.Status.SetText(" [yellow]Tab[white]: Cycle Focus | [yellow]Ctrl+P[white]: Command Palette | [yellow]Ctrl+R[white]: Send | [yellow]Ctrl+C[white]: Exit")
+	t.Status.SetText(" [yellow]Tab[white]: Cycle Focus | [yellow]Ctrl+P[white]: Command Palette | [yellow]Ctrl+R[white]: Send | [yellow]Ctrl+S[white]: Save | [yellow]Ctrl+C[white]: Exit")
 
 	flex := t.getMainLayout()
 
@@ -136,6 +137,11 @@ func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.Reque
 			}
 			return nil
 		case tcell.KeyCtrlS:
+			if t.ActivePanel.CurrentReq != nil {
+				t.saveRequest()
+			}
+			return nil
+		case tcell.KeyCtrlQ:
 			if t.ActivePanel.CurrentReq != nil {
 				t.showSQLEditor()
 			}
@@ -290,13 +296,12 @@ func (t *TUIApp) sendRequest() {
 
 		// 2. Execute
 		startTime := time.Now()
-		body, headers, statusCode, statusText := t.Client.ExecuteRequest(req.Request)
+		body, headers, statusCode, statusText := t.Client.ExecuteRequest(context.Background(), req.Request)
 		duration := time.Since(startTime).Milliseconds()
 		
 		// Record History
 		go func() {
-			history := t.Storage.LoadHistory()
-			record := models.HistoryRecord{
+			t.Storage.AddHistoryRecord(models.HistoryRecord{
 				Timestamp:       startTime,
 				Path:            req.Path,
 				Method:          req.Request.Method,
@@ -306,9 +311,7 @@ func (t *TUIApp) sendRequest() {
 				Duration:        duration,
 				ResponseBody:    body,
 				ResponseHeaders: headers,
-			}
-			history = append(history, record)
-			t.Storage.SaveHistory(history)
+			})
 		}()
 		
 		t.App.QueueUpdateDraw(func() {
@@ -340,7 +343,7 @@ func (t *TUIApp) sendRequest() {
 
 			// 4. SQL Sidekick
 			if req.SQLQuery != "" && req.DBPath != "" {
-				cols, rows, err := t.Client.ExecuteSQL(req.DBPath, req.SQLQuery)
+				cols, rows, err := t.Client.ExecuteSQL(context.Background(), req.DBPath, req.SQLQuery)
 				if err != nil {
 					respContent += fmt.Sprintf("\n\n [red]SQL Error: %v", err)
 				} else {
@@ -902,4 +905,14 @@ func (t *TUIApp) showSQLEditor() {
 
 	pages.AddPage("form", modal, true, true)
 	t.App.SetRoot(pages, true).SetFocus(form)
+}
+
+func (t *TUIApp) saveRequest() {
+	req := t.ActivePanel.CurrentReq
+	if req == nil {
+		return
+	}
+
+	t.Storage.SaveSingleRequest(*req)
+	t.ActivePanel.Response.SetText(fmt.Sprintf(" [green]Request saved: %s", req.Path))
 }

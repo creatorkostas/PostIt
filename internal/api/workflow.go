@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"postit/internal/models"
 	"strings"
@@ -17,32 +18,67 @@ type WorkflowLog struct {
 	Error      string `json:"error"`
 }
 
-func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.RequestInfo, startNodeID string) ([]WorkflowLog, error) {
+type workflowTask struct {
+	nodeID      string
+	itemPayload string // for loop items
+}
+
+const maxWorkflowTasks = 5000 // prevent infinite loops or excessive resource usage
+
+func (c *Client) RunWorkflow(ctx context.Context, workflow *models.Workflow, requests []models.RequestInfo, startNodeID string) ([]WorkflowLog, error) {
 	logs := []WorkflowLog{}
 	
 	if len(workflow.Nodes) == 0 {
 		return logs, nil
 	}
 
-	var currentNode *models.WorkflowNode
+	tasks := []workflowTask{}
 	if startNodeID == "" {
-		currentNode = &workflow.Nodes[0]
+		tasks = append(tasks, workflowTask{nodeID: workflow.Nodes[0].ID})
 	} else {
+		tasks = append(tasks, workflowTask{nodeID: startNodeID})
+	}
+
+	visited := make(map[string]int)
+	taskCount := 0
+
+	for len(tasks) > 0 {
+		select {
+		case <-ctx.Done():
+			return logs, ctx.Err()
+		default:
+		}
+
+		if taskCount >= maxWorkflowTasks {
+			return logs, fmt.Errorf("Workflow exceeded maximum task limit (%d)", maxWorkflowTasks)
+		}
+		taskCount++
+
+		// Pop task (FIFO for standard flow, but recursion usually implies LIFO)
+		// Let's use LIFO to mimic recursive behavior for loops
+		task := tasks[len(tasks)-1]
+		tasks = tasks[:len(tasks)-1]
+
+		var currentNode *models.WorkflowNode
 		for i := range workflow.Nodes {
-			if workflow.Nodes[i].ID == startNodeID {
+			if workflow.Nodes[i].ID == task.nodeID {
 				currentNode = &workflow.Nodes[i]
 				break
 			}
 		}
-	}
+		if currentNode == nil { continue }
 
-	visited := make(map[string]bool)
-
-	for currentNode != nil {
-		if visited[currentNode.ID] {
-			break // Prevent infinite loops
+		// Item injection for loops
+		if task.itemPayload != "" {
+			c.Storage.VariableMap["$item"] = task.itemPayload
 		}
-		visited[currentNode.ID] = true
+
+		// Cycle detection (simple version: don't visit same node too many times in a single linear path)
+		// For a graph it's harder, but let's at least prevent infinite zero-delay loops
+		visited[currentNode.ID]++
+		if visited[currentNode.ID] > 1000 {
+			return logs, fmt.Errorf("Potential infinite loop detected at node %s", currentNode.ID)
+		}
 
 		log := WorkflowLog{NodeID: currentNode.ID}
 		outcome := "success"
@@ -62,7 +98,7 @@ func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.Reques
 				outcome = "failure"
 			} else {
 				c.Processor.RunScripts(targetReq.Events, "prerequest", nil, nil, targetReq.Request.Header)
-				body, _, statusCode, statusText := c.ExecuteRequest(targetReq.Request)
+				body, _, statusCode, statusText := c.ExecuteRequest(ctx, targetReq.Request)
 				log.StatusCode = statusCode
 				log.StatusText = statusText
 				log.Body = body
@@ -82,7 +118,11 @@ func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.Reques
 			}
 
 		case "wait":
-			time.Sleep(time.Duration(currentNode.WaitTime) * time.Millisecond)
+			select {
+			case <-time.After(time.Duration(currentNode.WaitTime) * time.Millisecond):
+			case <-ctx.Done():
+				return logs, ctx.Err()
+			}
 			log.StatusText = fmt.Sprintf("Waited %dms", currentNode.WaitTime)
 
 		case "condition":
@@ -100,7 +140,6 @@ func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.Reques
 			}
 
 		case "loop":
-			// ... existing loop code ...
 			lastBody := ""
 			if len(logs) > 0 {
 				lastBody = logs[len(logs)-1].Body
@@ -110,11 +149,11 @@ func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.Reques
 				log.Error = "Loop path is not an array"
 				outcome = "failure"
 			} else {
-				// ... loop items ...
 				items := array.Array()
 				max := currentNode.MaxIterations
 				if max <= 0 || max > len(items) { max = len(items) }
 				log.StatusText = fmt.Sprintf("Looping %d items", max)
+				
 				var loopEntryID string
 				for _, e := range workflow.Edges {
 					if e.FromNode == currentNode.ID && e.Type == "loop_item" {
@@ -122,37 +161,39 @@ func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.Reques
 						break
 					}
 				}
+				
 				if loopEntryID != "" {
-					for i := 0; i < max; i++ {
-						c.Storage.VariableMap["$item"] = items[i].Raw
-						c.RunWorkflow(workflow, requests, loopEntryID)
+					// Add loop items to tasks in reverse so they execute in order when popped from LIFO stack
+					for i := max - 1; i >= 0; i-- {
+						tasks = append(tasks, workflowTask{
+							nodeID:      loopEntryID,
+							itemPayload: items[i].Raw,
+						})
 					}
 				}
 				outcome = "success"
 			}
 
 		case "script":
-			// Execute JS
 			c.Processor.RunScripts([]models.Event{{Listen: "test", Script: models.Script{Exec: strings.Split(currentNode.Script, "\n")}}}, "test", nil, nil, nil)
 			log.StatusText = "Script Executed"
 			outcome = "success"
 
 		case "input":
-			// Pause workflow
 			workflow.Status = "paused"
 			workflow.WaitingFor = currentNode.VariableName
 			workflow.CurrentNode = currentNode.ID
 			log.StatusText = fmt.Sprintf("Paused, waiting for variable: %s", currentNode.VariableName)
 			logs = append(logs, log)
-			return logs, nil // Stop execution here
+			return logs, nil 
 		}
 
 		logs = append(logs, log)
 
+		// Determine next standard node
 		var nextNodeID string
 		for _, edge := range workflow.Edges {
 			if edge.FromNode == currentNode.ID {
-				// For loop node, "default" edge is followed AFTER the loop completes
 				if currentNode.Type == "loop" && (edge.Type == "default" || edge.Type == "success") {
 					nextNodeID = edge.ToNode
 					break
@@ -164,18 +205,8 @@ func (c *Client) RunWorkflow(workflow *models.Workflow, requests []models.Reques
 			}
 		}
 
-		if nextNodeID == "" {
-			currentNode = nil
-		} else {
-			found := false
-			for i := range workflow.Nodes {
-				if workflow.Nodes[i].ID == nextNodeID {
-					currentNode = &workflow.Nodes[i]
-					found = true
-					break
-				}
-			}
-			if !found { currentNode = nil }
+		if nextNodeID != "" {
+			tasks = append(tasks, workflowTask{nodeID: nextNodeID})
 		}
 	}
 

@@ -2,7 +2,9 @@ package api
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -19,6 +21,7 @@ type WSClient struct {
 	Conn     *websocket.Conn
 	Messages []WSMessage
 	mu       sync.Mutex
+	connMu   sync.Mutex
 }
 
 func NewWSClient() *WSClient {
@@ -28,10 +31,30 @@ func NewWSClient() *WSClient {
 }
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // Same-origin or no Origin header (e.g., from a tool)
+		}
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		
+		uHost := u.Hostname()
+		return uHost == "localhost" || uHost == "127.0.0.1" || uHost == host
+	},
 }
 
 func (c *WSClient) Connect(url string) error {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
@@ -45,9 +68,17 @@ func (c *WSClient) Connect(url string) error {
 	
 	// Start listener
 	go func() {
-		defer c.Conn.Close()
+		currentConn := conn
+		defer func() {
+			c.connMu.Lock()
+			currentConn.Close()
+			if c.Conn == currentConn {
+				c.Conn = nil
+			}
+			c.connMu.Unlock()
+		}()
 		for {
-			_, message, err := c.Conn.ReadMessage()
+			_, message, err := currentConn.ReadMessage()
 			if err != nil {
 				c.addMessage("error", err.Error())
 				break
@@ -60,6 +91,9 @@ func (c *WSClient) Connect(url string) error {
 }
 
 func (c *WSClient) Send(message string) error {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+
 	if c.Conn == nil {
 		return fmt.Errorf("not connected")
 	}
@@ -89,8 +123,12 @@ func (c *WSClient) GetMessages() []WSMessage {
 }
 
 func (c *WSClient) Close() {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+
 	if c.Conn != nil {
 		c.Conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 		c.Conn.Close()
+		c.Conn = nil
 	}
 }

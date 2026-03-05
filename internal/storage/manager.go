@@ -27,12 +27,18 @@ type Manager struct {
 	WorkflowsPath    string
 	EnvironmentsPath string
 	ActiveEnvPath    string
+	CollectionPath   string
 	VariableMap      map[string]string
 	GlobalHeaders    []models.Header
 	Environments     []models.Environment
 	ActiveEnvID      string
 	VaultKey         []byte // AES-256 Key derived from password
 	
+	// Thread Protection
+	varMu            sync.RWMutex
+	historyMu        sync.Mutex
+	dataMu           sync.RWMutex // for GlobalHeaders and Environments
+
 	// Vault Auto-Lock
 	LastActivity     time.Time
 	AutoLockDuration time.Duration
@@ -48,6 +54,7 @@ func NewManager(outputDir string) *Manager {
 		WorkflowsPath:    filepath.Join(outputDir, "workflows.json"),
 		EnvironmentsPath: filepath.Join(outputDir, "environments.json"),
 		ActiveEnvPath:    filepath.Join(outputDir, "active_env.json"),
+		CollectionPath:   filepath.Join(outputDir, "collection.json"),
 		VariableMap:      make(map[string]string),
 		GlobalHeaders:    []models.Header{},
 		Environments:     []models.Environment{},
@@ -78,16 +85,35 @@ func (m *Manager) ResetVaultActivity() {
 }
 
 func (m *Manager) LoadEnvironments() []models.Environment {
+	m.dataMu.Lock()
+	defer m.dataMu.Unlock()
 	if data, err := ioutil.ReadFile(m.EnvironmentsPath); err == nil {
-		json.Unmarshal(data, &m.Environments)
+		if err := json.Unmarshal(data, &m.Environments); err != nil {
+			fmt.Printf("Error unmarshaling environments: %v\n", err)
+		}
 	}
 	return m.Environments
 }
 
+func (m *Manager) GetEnvironments() []models.Environment {
+	m.dataMu.RLock()
+	defer m.dataMu.RUnlock()
+	return append([]models.Environment{}, m.Environments...)
+}
+
 func (m *Manager) SaveEnvironments(envs []models.Environment) {
+	m.dataMu.Lock()
 	m.Environments = envs
-	data, _ := json.MarshalIndent(envs, "", "  ")
-	ioutil.WriteFile(m.EnvironmentsPath, data, 0644)
+	m.dataMu.Unlock()
+
+	data, err := json.MarshalIndent(envs, "", "  ")
+	if err != nil {
+		fmt.Printf("Error marshaling environments: %v\n", err)
+		return
+	}
+	if err := ioutil.WriteFile(m.EnvironmentsPath, data, 0644); err != nil {
+		fmt.Printf("Error writing environments file: %v\n", err)
+	}
 }
 
 func (m *Manager) LoadActiveEnv() string {
@@ -99,20 +125,30 @@ func (m *Manager) LoadActiveEnv() string {
 
 func (m *Manager) SaveActiveEnv(id string) {
 	m.ActiveEnvID = id
-	ioutil.WriteFile(m.ActiveEnvPath, []byte(id), 0644)
+	if err := ioutil.WriteFile(m.ActiveEnvPath, []byte(id), 0644); err != nil {
+		fmt.Printf("Error saving active env: %v\n", err)
+	}
 }
 
 func (m *Manager) LoadWorkflows() []models.Workflow {
 	var workflows []models.Workflow
 	if data, err := ioutil.ReadFile(m.WorkflowsPath); err == nil {
-		json.Unmarshal(data, &workflows)
+		if err := json.Unmarshal(data, &workflows); err != nil {
+			fmt.Printf("Error unmarshaling workflows: %v\n", err)
+		}
 	}
 	return workflows
 }
 
 func (m *Manager) SaveWorkflows(workflows []models.Workflow) {
-	data, _ := json.MarshalIndent(workflows, "", "  ")
-	ioutil.WriteFile(m.WorkflowsPath, data, 0644)
+	data, err := json.MarshalIndent(workflows, "", "  ")
+	if err != nil {
+		fmt.Printf("Error marshaling workflows: %v\n", err)
+		return
+	}
+	if err := ioutil.WriteFile(m.WorkflowsPath, data, 0644); err != nil {
+		fmt.Printf("Error writing workflows file: %v\n", err)
+	}
 }
 
 func (m *Manager) Init() error {
@@ -126,57 +162,197 @@ func (m *Manager) Init() error {
 }
 
 func (m *Manager) LoadHistory() []models.HistoryRecord {
+	m.historyMu.Lock()
+	defer m.historyMu.Unlock()
 	var history []models.HistoryRecord
 	if data, err := ioutil.ReadFile(m.HistoryPath); err == nil {
-		json.Unmarshal(data, &history)
+		if err := json.Unmarshal(data, &history); err != nil {
+			fmt.Printf("Error unmarshaling history: %v\n", err)
+		}
 	}
 	return history
 }
 
 func (m *Manager) SaveHistory(history []models.HistoryRecord) {
+	m.historyMu.Lock()
+	defer m.historyMu.Unlock()
 	// Keep last 50
 	if len(history) > 50 {
 		history = history[len(history)-50:]
 	}
+	data, err := json.MarshalIndent(history, "", "  ")
+	if err != nil {
+		fmt.Printf("Error marshaling history: %v\n", err)
+		return
+	}
+	if err := ioutil.WriteFile(m.HistoryPath, data, 0644); err != nil {
+		fmt.Printf("Error writing history file: %v\n", err)
+	}
+}
+
+func (m *Manager) AddHistoryRecord(record models.HistoryRecord) {
+	m.historyMu.Lock()
+	defer m.historyMu.Unlock()
+	
+	var history []models.HistoryRecord
+	if data, err := ioutil.ReadFile(m.HistoryPath); err == nil {
+		json.Unmarshal(data, &history)
+	}
+	
+	history = append(history, record)
+	if len(history) > 50 {
+		history = history[len(history)-50:]
+	}
+	
 	data, _ := json.MarshalIndent(history, "", "  ")
 	ioutil.WriteFile(m.HistoryPath, data, 0644)
 }
 
 func (m *Manager) LoadVariables() {
+	m.varMu.Lock()
+	defer m.varMu.Unlock()
 	if data, err := ioutil.ReadFile(m.VarsPath); err == nil {
-		json.Unmarshal(data, &m.VariableMap)
+		if err := json.Unmarshal(data, &m.VariableMap); err != nil {
+			fmt.Printf("Error unmarshaling variables: %v\n", err)
+		}
 	}
 }
 
 func (m *Manager) SaveVariables() {
-	data, _ := json.MarshalIndent(m.VariableMap, "", "  ")
-	ioutil.WriteFile(m.VarsPath, data, 0644)
-}
-
-func (m *Manager) SetVariable(key, value string) {
-	m.VariableMap[key] = value
-	m.SaveVariables()
-}
-
-func (m *Manager) LoadGlobalHeaders() {
-	if data, err := ioutil.ReadFile(m.HeadersPath); err == nil {
-		json.Unmarshal(data, &m.GlobalHeaders)
+	m.varMu.RLock()
+	data, err := json.MarshalIndent(m.VariableMap, "", "  ")
+	m.varMu.RUnlock()
+	
+	if err != nil {
+		fmt.Printf("Error marshaling variables: %v\n", err)
+		return
+	}
+	if err := ioutil.WriteFile(m.VarsPath, data, 0644); err != nil {
+		fmt.Printf("Error writing variables file: %v\n", err)
 	}
 }
 
-func (m *Manager) SaveGlobalHeaders() {
-	data, _ := json.MarshalIndent(m.GlobalHeaders, "", "  ")
-	ioutil.WriteFile(m.HeadersPath, data, 0644)
+func (m *Manager) SetVariable(key, value string) {
+	m.varMu.Lock()
+	m.VariableMap[key] = value
+	m.varMu.Unlock()
+	m.SaveVariables()
+}
+
+func (m *Manager) GetVariable(key string) (string, bool) {
+	m.varMu.RLock()
+	defer m.varMu.RUnlock()
+	val, ok := m.VariableMap[key]
+	return val, ok
+}
+
+func (m *Manager) GetVariableMapCopy() map[string]string {
+	m.varMu.RLock()
+	defer m.varMu.RUnlock()
+	copy := make(map[string]string)
+	for k, v := range m.VariableMap {
+		copy[k] = v
+	}
+	return copy
+}
+
+func (m *Manager) LoadGlobalHeaders() {
+	m.dataMu.Lock()
+	defer m.dataMu.Unlock()
+	if data, err := ioutil.ReadFile(m.HeadersPath); err == nil {
+		if err := json.Unmarshal(data, &m.GlobalHeaders); err != nil {
+			fmt.Printf("Error unmarshaling global headers: %v\n", err)
+		}
+	}
+}
+
+func (m *Manager) GetGlobalHeaders() []models.Header {
+	m.dataMu.RLock()
+	defer m.dataMu.RUnlock()
+	return append([]models.Header{}, m.GlobalHeaders...)
+}
+
+func (m *Manager) SaveGlobalHeaders(headers []models.Header) {
+	m.dataMu.Lock()
+	m.GlobalHeaders = headers
+	m.dataMu.Unlock()
+
+	data, err := json.MarshalIndent(headers, "", "  ")
+	if err != nil {
+		fmt.Printf("Error marshaling global headers: %v\n", err)
+		return
+	}
+	if err := ioutil.WriteFile(m.HeadersPath, data, 0644); err != nil {
+		fmt.Printf("Error writing global headers file: %v\n", err)
+	}
+}
+
+func (m *Manager) LoadCollection() (models.Collection, error) {
+	var col models.Collection
+	data, err := ioutil.ReadFile(m.CollectionPath)
+	if err != nil {
+		return col, err
+	}
+	err = json.Unmarshal(data, &col)
+	return col, err
+}
+
+func (m *Manager) SaveCollection(col models.Collection) error {
+	data, err := json.MarshalIndent(col, "", "  ")
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(m.CollectionPath, data, 0644)
 }
 
 func (m *Manager) LoadCache() map[string]models.RequestInfo {
 	cache := make(map[string]models.RequestInfo)
-	files, _ := ioutil.ReadDir(m.OutputDir)
+
+	// Optimal solution for PERF-002: Load from centralized collection index
+	if col, err := m.LoadCollection(); err == nil && len(col.Item) > 0 {
+		var flatten func([]models.Item, string)
+		flatten = func(items []models.Item, prefix string) {
+			for _, item := range items {
+				path := item.Name
+				if prefix != "" {
+					path = prefix + " > " + item.Name
+				}
+				if item.Request != nil {
+					cache[path] = models.RequestInfo{
+						Path:    path,
+						Request: item.Request,
+						Events:  item.Event,
+						Order:   item.Order,
+					}
+				}
+				if len(item.Item) > 0 {
+					flatten(item.Item, path)
+				}
+			}
+		}
+		flatten(col.Item, "")
+		if len(cache) > 0 {
+			return cache
+		}
+	}
+
+	// Fallback for migration: Scan directory if index is missing or empty
+	files, err := ioutil.ReadDir(m.OutputDir)
+	if err != nil {
+		fmt.Printf("Error reading output directory: %v\n", err)
+		return cache
+	}
 	for _, file := range files {
 		name := file.Name()
 		if !file.IsDir() && strings.HasSuffix(name, ".json") && 
-		   name != "variables.json" && name != "global_headers.json" {
-			data, _ := ioutil.ReadFile(filepath.Join(m.OutputDir, name))
+		   name != "variables.json" && name != "global_headers.json" &&
+		   name != "history.json" && name != "workflows.json" &&
+		   name != "environments.json" && name != "active_env.json" &&
+		   name != "collection.json" {
+			data, err := ioutil.ReadFile(filepath.Join(m.OutputDir, name))
+			if err != nil {
+				continue
+			}
 			var req models.RequestInfo
 			if err := json.Unmarshal(data, &req); err == nil {
 				cache[req.Path] = req
@@ -188,13 +364,21 @@ func (m *Manager) LoadCache() map[string]models.RequestInfo {
 
 func (m *Manager) SaveSingleRequest(req models.RequestInfo) {
 	filename := getSafeFilename(req.Path)
-	data, _ := json.MarshalIndent(req, "", "    ")
-	ioutil.WriteFile(filepath.Join(m.OutputDir, filename), data, 0644)
+	data, err := json.MarshalIndent(req, "", "    ")
+	if err != nil {
+		fmt.Printf("Error marshaling request: %v\n", err)
+		return
+	}
+	if err := ioutil.WriteFile(filepath.Join(m.OutputDir, filename), data, 0644); err != nil {
+		fmt.Printf("Error writing request file: %v\n", err)
+	}
 }
 
 func (m *Manager) DeleteRequestFile(path string) {
 	filename := getSafeFilename(path)
-	os.Remove(filepath.Join(m.OutputDir, filename))
+	if err := os.Remove(filepath.Join(m.OutputDir, filename)); err != nil && !os.IsNotExist(err) {
+		fmt.Printf("Error deleting request file: %v\n", err)
+	}
 }
 
 func (m *Manager) SetVaultPassword(password string) {

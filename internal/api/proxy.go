@@ -28,7 +28,11 @@ func (p *ProxyServer) Start(port int) error {
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 1. Capture Request Data
-		bodyBytes, _ := ioutil.ReadAll(r.Body)
+		bodyBytes, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to read request body: %v", err), http.StatusBadRequest)
+			return
+		}
 		r.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes)) // Reset body for forwarding
 
 		// 2. Create PostIt Request Model
@@ -86,7 +90,9 @@ func (p *ProxyServer) Start(port int) error {
 			proxyReq.Header.Set(h.Key, h.Value)
 		}
 
-		client := &http.Client{}
+		client := &http.Client{
+			Timeout: 30 * time.Second,
+		}
 		resp, err := client.Do(proxyReq)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
@@ -101,7 +107,10 @@ func (p *ProxyServer) Start(port int) error {
 			}
 		}
 		w.WriteHeader(resp.StatusCode)
-		respBody, _ := ioutil.ReadAll(resp.Body)
+		respBody, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return
+		}
 		w.Write(respBody)
 	})
 
