@@ -2,62 +2,81 @@ package processor
 
 import (
 	"postit/internal/models"
-	"regexp"
 	"strings"
+
+	"github.com/kballard/go-shellquote"
 )
 
-func ParseCurl(curl string) *models.Request {
+func ParseCurl(curlCommand string) *models.Request {
+	// Clean up potential multi-line commands
+	curlCommand = strings.ReplaceAll(curlCommand, "\\\n", " ")
+	curlCommand = strings.ReplaceAll(curlCommand, "\\\r\n", " ")
+
+	parts, err := shellquote.Split(curlCommand)
+	if err != nil || len(parts) == 0 {
+		return nil
+	}
+
 	req := &models.Request{
 		Method: "GET",
 		URL:    models.URL{},
 		Header: []models.Header{},
 	}
 
-	// Method
-	methodRegex := regexp.MustCompile(`-X\s+([A-Z]+)`)
-	if match := methodRegex.FindStringSubmatch(curl); len(match) > 1 {
-		req.Method = match[1]
-	} else if strings.Contains(curl, "--data") || strings.Contains(curl, "-d") {
-		req.Method = "POST"
-	}
+	for i := 0; i < len(parts); i++ {
+		p := parts[i]
 
-	// URL
-	urlRegex := regexp.MustCompile(`'(https?://[^']+)'|" (https?://[^"]+)"|(https?://[^\s]+)`)
-	if match := urlRegex.FindStringSubmatch(curl); len(match) > 0 {
-		for _, m := range match[1:] {
-			if m != "" {
-				req.URL.Raw = m
-				break
+		switch p {
+		case "-X", "--request":
+			if i+1 < len(parts) {
+				req.Method = strings.ToUpper(parts[i+1])
+				i++
 			}
-		}
-	}
-
-	// Headers
-	headerRegex := regexp.MustCompile(`-H\s+['"]([^'"]+)['"]`)
-	matches := headerRegex.FindAllStringSubmatch(curl, -1)
-	for _, m := range matches {
-		parts := strings.SplitN(m[1], ":", 2)
-		if len(parts) == 2 {
-			req.Header = append(req.Header, models.Header{
-				Key:   strings.TrimSpace(parts[0]),
-				Value: strings.TrimSpace(parts[1]),
-			})
-		}
-	}
-
-	// Body
-	bodyRegex := regexp.MustCompile(`-d\s+['"]([^'"]+)['"]|--data\s+['"]([^'"]+)['"]`)
-	if match := bodyRegex.FindStringSubmatch(curl); len(match) > 0 {
-		var body string
-		for _, m := range match[1:] {
-			if m != "" {
-				body = m
-				break
+		case "-H", "--header":
+			if i+1 < len(parts) {
+				headerLine := parts[i+1]
+				headerParts := strings.SplitN(headerLine, ":", 2)
+				if len(headerParts) == 2 {
+					req.Header = append(req.Header, models.Header{
+						Key:   strings.TrimSpace(headerParts[0]),
+						Value: strings.TrimSpace(headerParts[1]),
+					})
+				}
+				i++
 			}
-		}
-		req.Body = &models.Body{
-			Mode: "raw",
-			Raw:  body,
+		case "-d", "--data", "--data-raw", "--data-binary":
+			if i+1 < len(parts) {
+				if req.Body == nil {
+					req.Body = &models.Body{Mode: "raw"}
+				}
+				if req.Body.Raw != "" {
+					req.Body.Raw += "&"
+				}
+				req.Body.Raw += parts[i+1]
+				if req.Method == "GET" {
+					req.Method = "POST"
+				}
+				i++
+			}
+		case "-u", "--user":
+			if i+1 < len(parts) {
+				// Basic Auth
+				req.Auth = &models.Auth{
+					Type: "basic",
+					Basic: []models.BasicAuth{
+						{Key: "username", Value: strings.Split(parts[i+1], ":")[0]},
+						{Key: "password", Value: strings.SplitN(parts[i+1], ":", 2)[1]},
+					},
+				}
+				i++
+			}
+		default:
+			if strings.HasPrefix(p, "http://") || strings.HasPrefix(p, "https://") {
+				req.URL.Raw = p
+			} else if p != "curl" && !strings.HasPrefix(p, "-") && req.URL.Raw == "" {
+				// Potential URL without protocol
+				req.URL.Raw = p
+			}
 		}
 	}
 

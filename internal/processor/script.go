@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/charmbracelet/log"
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 )
@@ -28,10 +29,15 @@ var (
 type ScriptProcessor struct {
 	Storage       *storage.Manager
 	EnablePrompts bool
+	Logger        *log.Logger
 }
 
 func NewScriptProcessor(store *storage.Manager) *ScriptProcessor {
-	return &ScriptProcessor{Storage: store, EnablePrompts: true}
+	return &ScriptProcessor{
+		Storage:       store,
+		EnablePrompts: true,
+		Logger:        log.Default(),
+	}
 }
 
 func (sp *ScriptProcessor) ResolveVariables(text string) string {
@@ -158,7 +164,7 @@ func (sp *ScriptProcessor) processLines(lines []string, responseBody []byte, res
 			if val != "" {
 				sp.Storage.SetVariable(key, val)
 				if responseBody != nil {
-					fmt.Printf(" [Script] Variable Saved: %s = %s\n", key, val)
+					sp.Logger.Info("Variable Saved", "key", key, "value", val)
 				}
 			}
 		}
