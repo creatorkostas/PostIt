@@ -26,11 +26,12 @@ var (
 )
 
 type ScriptProcessor struct {
-	Storage *storage.Manager
+	Storage       *storage.Manager
+	EnablePrompts bool
 }
 
 func NewScriptProcessor(store *storage.Manager) *ScriptProcessor {
-	return &ScriptProcessor{Storage: store}
+	return &ScriptProcessor{Storage: store, EnablePrompts: true}
 }
 
 func (sp *ScriptProcessor) ResolveVariables(text string) string {
@@ -77,7 +78,7 @@ func (sp *ScriptProcessor) ResolveVariables(text string) string {
 		}
 
 		// 2. Check globals
-		if val, ok := sp.Storage.VariableMap[varName]; ok && val != "" {
+		if val, ok := sp.Storage.GetVariable(varName); ok && val != "" {
 			return val
 		}
 		
@@ -87,6 +88,10 @@ func (sp *ScriptProcessor) ResolveVariables(text string) string {
 			return val
 		}
 		
+		if !sp.EnablePrompts {
+			return "{{" + varName + "}}" // Return as-is if no prompts allowed
+		}
+
 		var val string
 		prompt := &survey.Input{Message: fmt.Sprintf("Variable '%s' required. Value:", varName)}
 		survey.AskOne(prompt, &val)
@@ -171,7 +176,7 @@ func (sp *ScriptProcessor) evaluateCondition(cond string, localVars map[string]s
 	leftVal := left
 	if val, ok := localVars[left]; ok {
 		leftVal = val
-	} else if val, ok := sp.Storage.VariableMap[left]; ok {
+	} else if val, ok := sp.Storage.GetVariable(left); ok {
 		leftVal = val
 	}
 	return leftVal == right
@@ -195,7 +200,7 @@ func (sp *ScriptProcessor) resolveValue(raw string, body *string, respHeaders ma
 	}
 	if m := reGetVar.FindStringSubmatch(raw); len(m) > 2 {
 		key := strings.Trim(m[2], "'\"")
-		val, ok := sp.Storage.VariableMap[key]
+		val, ok := sp.Storage.GetVariable(key)
 		if !ok || val == "" {
 			return sp.GetOrPrompt(key)
 		}
@@ -247,13 +252,18 @@ func (sp *ScriptProcessor) GetOrPrompt(name string) string {
 		}
 	}
 
-	if val, ok := sp.Storage.VariableMap[name]; ok && val != "" {
+	if val, ok := sp.Storage.GetVariable(name); ok && val != "" {
 		return val
 	}
 	if val := os.Getenv(name); val != "" {
 		sp.Storage.SetVariable(name, val)
 		return val
 	}
+
+	if !sp.EnablePrompts {
+		return "{{" + name + "}}"
+	}
+
 	var val string
 	prompt := &survey.Input{Message: fmt.Sprintf("Variable '%s' required. Value:", name)}
 	survey.AskOne(prompt, &val)

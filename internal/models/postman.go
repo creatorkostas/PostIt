@@ -115,10 +115,11 @@ type RequestInfo struct {
 	Order     int            `json:"order"`
 	SQLQuery  string         `json:"sql_query,omitempty"`
 	DBPath    string         `json:"db_path,omitempty"`
+	Schema    string         `json:"schema,omitempty"`
 }
 
 func ReconstructItems(reqs []RequestInfo) []Item {
-	// Sort requests by absolute order first
+	// Sort requests by absolute order first to help determine placement
 	sort.Slice(reqs, func(i, j int) bool {
 		return reqs[i].Order < reqs[j].Order
 	})
@@ -126,44 +127,73 @@ func ReconstructItems(reqs []RequestInfo) []Item {
 	root := []Item{}
 	for _, req := range reqs {
 		parts := strings.Split(req.Path, " > ")
-		current := &root
+		currentItems := &root
+		
 		for i, part := range parts {
-			found := false
-			if i == len(parts)-1 {
-				*current = append(*current, Item{
+			isLast := i == len(parts)-1
+			
+			// Try to find existing folder
+			var foundIdx = -1
+			for j, itm := range *currentItems {
+				if itm.Name == part && itm.Request == nil && !isLast {
+					foundIdx = j
+					break
+				}
+			}
+
+			if isLast {
+				// It's the request itself
+				*currentItems = append(*currentItems, Item{
 					Name:     part,
 					Request:  req.Request,
 					Response: req.Responses,
 					Event:    req.Events,
+					Order:    req.Order,
 				})
-				break
-			}
-			for j := range *current {
-				if (*current)[j].Name == part && (*current)[j].Item != nil {
-					current = &(*current)[j].Item
-					found = true
-					break
+			} else if foundIdx != -1 {
+				// Folder already exists, go deeper
+				currentItems = &(*currentItems)[foundIdx].Item
+			} else {
+				// Create new folder
+				newItem := Item{
+					Name:  part,
+					Item:  []Item{},
+					Order: req.Order, // Folder takes order of its first item
 				}
-			}
-			if !found {
-				newItem := Item{Name: part, Item: []Item{}}
-				*current = append(*current, newItem)
-				current = &(*current)[len(*current)-1].Item
+				*currentItems = append(*currentItems, newItem)
+				currentItems = &(*currentItems)[len(*currentItems)-1].Item
 			}
 		}
 	}
+	
 	sortItems(root)
 	return root
 }
 
 func sortItems(items []Item) {
-	for i := 0; i < len(items); i++ {
-		for j := i + 1; j < len(items); j++ {
-			// This is a simple sort, usually Postman has its own order
+	sort.Slice(items, func(i, j int) bool {
+		// Rule 1: Folders first
+		iIsFolder := items[i].Request == nil && items[i].Item != nil
+		jIsFolder := items[j].Request == nil && items[j].Item != nil
+		
+		if iIsFolder && !jIsFolder {
+			return true
 		}
-	}
+		if !iIsFolder && jIsFolder {
+			return false
+		}
+		
+		// Rule 2: If both are the same type, use Order
+		if items[i].Order != items[j].Order {
+			return items[i].Order < items[j].Order
+		}
+		
+		// Rule 3: Alphabetical fallback
+		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+	})
+
 	for i := range items {
-		if len(items[i].Item) > 0 {
+		if items[i].Item != nil {
 			sortItems(items[i].Item)
 		}
 	}

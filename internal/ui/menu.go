@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"postit/internal/api"
 	"postit/internal/models"
@@ -24,8 +25,9 @@ func NewMenu(store *storage.Manager, proc *processor.ScriptProcessor, client *ap
 
 func (m *Menu) ManageGlobalHeaders() {
 	for {
+		headers := m.Storage.GetGlobalHeaders()
 		headerOptions := []string{"Add New Global Header", "Finish"}
-		for _, h := range m.Storage.GlobalHeaders {
+		for _, h := range headers {
 			headerOptions = append(headerOptions, fmt.Sprintf("%s: %s", h.Key, h.Value))
 		}
 
@@ -41,22 +43,22 @@ func (m *Menu) ManageGlobalHeaders() {
 			survey.AskOne(&survey.Input{Message: "Header Key:"}, &key)
 			survey.AskOne(&survey.Input{Message: "Header Value:"}, &val)
 			if key != "" {
-				m.Storage.GlobalHeaders = append(m.Storage.GlobalHeaders, models.Header{Key: key, Value: val})
-				m.Storage.SaveGlobalHeaders()
+				headers = append(headers, models.Header{Key: key, Value: val})
+				m.Storage.SaveGlobalHeaders(headers)
 			}
 		} else {
-			for i, h := range m.Storage.GlobalHeaders {
+			for i, h := range headers {
 				if fmt.Sprintf("%s: %s", h.Key, h.Value) == selectedHeader {
 					action := ""
 					survey.AskOne(&survey.Select{Message: "Action:", Options: []string{"Edit", "Delete", "Cancel"}}, &action)
 					if action == "Edit" {
 						newVal := h.Value
 						survey.AskOne(&survey.Input{Message: fmt.Sprintf("New value for %s:", h.Key), Default: h.Value}, &newVal)
-						m.Storage.GlobalHeaders[i].Value = newVal
-						m.Storage.SaveGlobalHeaders()
+						headers[i].Value = newVal
+						m.Storage.SaveGlobalHeaders(headers)
 					} else if action == "Delete" {
-						m.Storage.GlobalHeaders = append(m.Storage.GlobalHeaders[:i], m.Storage.GlobalHeaders[i+1:]...)
-						m.Storage.SaveGlobalHeaders()
+						headers = append(headers[:i], headers[i+1:]...)
+						m.Storage.SaveGlobalHeaders(headers)
 					}
 					break
 				}
@@ -67,8 +69,9 @@ func (m *Menu) ManageGlobalHeaders() {
 
 func (m *Menu) ViewVariables() {
 	for {
+		varMap := m.Storage.GetVariableMapCopy()
 		keys := []string{"Add New Variable", "Finish"}
-		for k, v := range m.Storage.VariableMap {
+		for k, v := range varMap {
 			keys = append(keys, fmt.Sprintf("%s: %s", k, v))
 		}
 
@@ -87,7 +90,7 @@ func (m *Menu) ViewVariables() {
 			}
 		} else {
 			key := strings.Split(selected, ": ")[0]
-			val := m.Storage.VariableMap[key]
+			val, _ := m.Storage.GetVariable(key)
 			survey.AskOne(&survey.Input{Message: fmt.Sprintf("New value for %s:", key), Default: val}, &val)
 			m.Storage.SetVariable(key, val)
 		}
@@ -241,13 +244,12 @@ func (m *Menu) HandleRequestSelection(reqInfo *models.RequestInfo, allRequests *
 			m.Processor.RunScripts(reqInfo.Events, "test", nil, nil, reqInfo.Request.Header)
 			
 			startTime := time.Now()
-			respBody, respHeaders, statusCode, statusText := m.Client.ExecuteRequest(reqInfo.Request)
+			respBody, respHeaders, statusCode, statusText := m.Client.ExecuteRequest(context.Background(), reqInfo.Request)
 			duration := time.Since(startTime).Milliseconds()
 
 			// Record History
 			go func() {
-				history := m.Storage.LoadHistory()
-				record := models.HistoryRecord{
+				m.Storage.AddHistoryRecord(models.HistoryRecord{
 					Timestamp:       startTime,
 					Path:            reqInfo.Path,
 					Method:          reqInfo.Request.Method,
@@ -257,9 +259,7 @@ func (m *Menu) HandleRequestSelection(reqInfo *models.RequestInfo, allRequests *
 					Duration:        duration,
 					ResponseBody:    respBody,
 					ResponseHeaders: respHeaders,
-				}
-				history = append(history, record)
-				m.Storage.SaveHistory(history)
+				})
 			}()
 
 			fmt.Printf("\nResponse Status: %d %s\n", statusCode, statusText)
