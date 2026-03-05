@@ -49,8 +49,14 @@ func (r *Request) DeepCopy() *Request {
 }
 
 type Auth struct {
-	Type   string   `json:"type"`
-	Bearer []Header `json:"bearer,omitempty"`
+	Type   string      `json:"type"`
+	Bearer []Header    `json:"bearer,omitempty"`
+	Basic  []BasicAuth `json:"basic,omitempty"`
+}
+
+type BasicAuth struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 type Body struct {

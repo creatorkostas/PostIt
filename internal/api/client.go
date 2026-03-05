@@ -11,20 +11,23 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/charmbracelet/log"
 	"github.com/go-resty/resty/v2"
 )
 
 type Client struct {
 	Storage   *storage.Manager
 	Processor *processor.ScriptProcessor
+	Logger    *log.Logger
 	dbPool    map[string]*sql.DB
 	dbMu      sync.Mutex
 }
 
 func NewClient(store *storage.Manager, proc *processor.ScriptProcessor) *Client {
 	return &Client{
-		Storage:   store, 
+		Storage:   store,
 		Processor: proc,
+		Logger:    log.Default(),
 		dbPool:    make(map[string]*sql.DB),
 	}
 }
@@ -85,7 +88,7 @@ func (c *Client) ExecuteRequest(ctx context.Context, req *models.Request) (strin
 		}
 	}
 
-	fmt.Printf("\nSending %s %s...\n", method, url)
+	c.Logger.Info("Sending Request", "method", method, "url", url)
 	var resp *resty.Response
 	var err error
 
@@ -100,19 +103,19 @@ func (c *Client) ExecuteRequest(ctx context.Context, req *models.Request) (strin
 	}
 
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		c.Logger.Error("Request Failed", "error", err)
 		return "", nil, 0, fmt.Sprintf("Error: %v", err)
 	}
 
-	fmt.Printf("Status: %s (%v)\n", resp.Status(), resp.Time())
+	c.Logger.Info("Response Received", "status", resp.Status(), "time", resp.Time())
 	body := string(resp.Body())
 	if body != "" {
 		var prettyJSON interface{}
 		if err := json.Unmarshal(resp.Body(), &prettyJSON); err == nil {
 			formatted, _ := json.MarshalIndent(prettyJSON, "", "  ")
-			fmt.Println(string(formatted))
+			c.Logger.Debug("Response Body", "content", string(formatted))
 		} else {
-			fmt.Println(body)
+			c.Logger.Debug("Response Body", "content", body)
 		}
 	}
 	return body, resp.Header(), resp.StatusCode(), resp.Status()
