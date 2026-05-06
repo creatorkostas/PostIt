@@ -280,6 +280,13 @@ func (t *TUIApp) showRequest(req *models.RequestInfo) {
 		}
 	}
 
+	if req.SQLQuery != "" {
+		fmt.Fprintf(view, "\n[yellow]SQL SIDEKICK:\n")
+		fmt.Fprintf(view, "  [blue]Driver:[white] %s\n", req.SQLDriver)
+		fmt.Fprintf(view, "  [blue]DB Path:[white] %s\n", req.DBPath)
+		fmt.Fprintf(view, "  [blue]Query:[white] %s\n", req.SQLQuery)
+	}
+
 	t.ActivePanel.Main.AddItem(view, 0, 1, true)
 	t.ActivePanel.Response.SetText(" [gray]Press Ctrl+R to Send Request")
 }
@@ -290,9 +297,9 @@ func (t *TUIApp) sendRequest() {
 	panel.Response.SetText(" [yellow]Sending request...")
 	
 	go func() {
-		// 1. Run Pre-request scripts
+		// 1. Run Pre-request scripts only
 		t.Processor.RunScripts(req.Events, "prerequest", nil, nil, req.Request.Header)
-		t.Processor.RunScripts(req.Events, "test", nil, nil, req.Request.Header)
+		// Note: "test" scripts should only run AFTER the request
 
 		// 2. Execute
 		startTime := time.Now()
@@ -343,7 +350,7 @@ func (t *TUIApp) sendRequest() {
 
 			// 4. SQL Sidekick
 			if req.SQLQuery != "" && req.DBPath != "" {
-				cols, rows, err := t.Client.ExecuteSQL(context.Background(), req.DBPath, req.SQLQuery)
+				cols, rows, err := t.Client.ExecuteSQL(context.Background(), req.SQLDriver, req.DBPath, req.SQLQuery)
 				if err != nil {
 					respContent += fmt.Sprintf("\n\n [red]SQL Error: %v", err)
 				} else {
@@ -493,7 +500,7 @@ func (t *TUIApp) showImportCurlForm() {
 }
 
 func (t *TUIApp) showEnvironmentPicker() {
-	envs := t.Storage.LoadEnvironments()
+	envs := t.Storage.GetEnvironments()
 	if len(envs) == 0 {
 		t.ActivePanel.Response.SetText(" [red]No environments found.")
 		return
@@ -506,7 +513,7 @@ func (t *TUIApp) showEnvironmentPicker() {
 	for _, env := range envs {
 		e := env
 		list.AddItem(e.Name, "", 0, func() {
-			t.Storage.SaveActiveEnv(e.ID)
+			t.Storage.SetActiveEnvID(e.ID)
 			t.ActivePanel.Response.SetText(fmt.Sprintf(" [green]Switched to environment: %s", e.Name))
 			pages.RemovePage("picker")
 			t.App.SetFocus(t.Tree)
@@ -618,11 +625,18 @@ func (t *TUIApp) duplicateRequest() {
 			}
 		}
 
+		maxOrder := -1
+		for _, r := range t.Cached {
+			if r.Order > maxOrder {
+				maxOrder = r.Order
+			}
+		}
+
 		newReq := models.RequestInfo{
 			Path:    newPath,
 			Request: req.Request.DeepCopy(),
 			Events:  eventsCopy,
-			Order:   req.Order + 1,
+			Order:   maxOrder + 1,
 		}
 		
 		t.Cached = append(t.Cached, newReq)
@@ -830,8 +844,12 @@ func (t *TUIApp) showHammer() {
 			
 			t.App.QueueUpdateDraw(func() {
 				resText := fmt.Sprintf(" [yellow]Hammer Results for %s[white]\n\n", req.Path)
-				resText += fmt.Sprintf(" [blue]Total Requests:[white] %d\n", results.TotalRequests)
-				resText += fmt.Sprintf(" [green]Success Rate:  [white] %.2f%%\n", float64(results.SuccessCount)/float64(results.TotalRequests)*100)
+		resText += fmt.Sprintf(" [blue]Total Requests:[white] %d\n", results.TotalRequests)
+			var successRate float64
+			if results.TotalRequests > 0 {
+				successRate = float64(results.SuccessCount) / float64(results.TotalRequests) * 100
+			}
+			resText += fmt.Sprintf(" [green]Success Rate: [white] %.2f%%\n", successRate)
 				resText += fmt.Sprintf(" [yellow]RPS:           [white] %.2f\n", results.RPS)
 				resText += fmt.Sprintf(" [blue]Avg Latency:   [white] %v\n\n", results.AverageLatency)
 				
@@ -876,7 +894,10 @@ func (t *TUIApp) showSQLEditor() {
 	form := tview.NewForm()
 	form.SetBorder(true).SetTitle(" SQL Sidekick ").SetTitleAlign(tview.AlignLeft)
 
-	form.AddInputField("DB Path (SQLite)", req.DBPath, 60, nil, func(text string) {
+	form.AddDropDown("Driver", []string{"sqlite", "postgres", "mysql"}, 0, func(option string, optionIndex int) {
+		req.SQLDriver = option
+	})
+	form.AddInputField("DB Path (SQLite/Postgres/MySQL)", req.DBPath, 60, nil, func(text string) {
 		req.DBPath = text
 	})
 	form.AddInputField("SQL Query", req.SQLQuery, 60, nil, func(text string) {

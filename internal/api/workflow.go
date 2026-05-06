@@ -41,6 +41,7 @@ func (c *Client) RunWorkflow(ctx context.Context, workflow *models.Workflow, req
 
 	visited := make(map[string]int)
 	taskCount := 0
+	workflowVars := make(map[string]string)
 
 	for len(tasks) > 0 {
 		select {
@@ -54,8 +55,7 @@ func (c *Client) RunWorkflow(ctx context.Context, workflow *models.Workflow, req
 		}
 		taskCount++
 
-		// Pop task (FIFO for standard flow, but recursion usually implies LIFO)
-		// Let's use LIFO to mimic recursive behavior for loops
+		// Pop task (LIFO for loop items order)
 		task := tasks[len(tasks)-1]
 		tasks = tasks[:len(tasks)-1]
 
@@ -68,13 +68,12 @@ func (c *Client) RunWorkflow(ctx context.Context, workflow *models.Workflow, req
 		}
 		if currentNode == nil { continue }
 
-		// Item injection for loops
+		// Item injection for loops - uses local workflowVars
 		if task.itemPayload != "" {
-			c.Storage.VariableMap["$item"] = task.itemPayload
+			workflowVars["$item"] = task.itemPayload
 		}
 
-		// Cycle detection (simple version: don't visit same node too many times in a single linear path)
-		// For a graph it's harder, but let's at least prevent infinite zero-delay loops
+		// Cycle detection
 		visited[currentNode.ID]++
 		if visited[currentNode.ID] > 1000 {
 			return logs, fmt.Errorf("Potential infinite loop detected at node %s", currentNode.ID)
@@ -97,8 +96,8 @@ func (c *Client) RunWorkflow(ctx context.Context, workflow *models.Workflow, req
 				log.Error = "Request not found"
 				outcome = "failure"
 			} else {
-				c.Processor.RunScripts(targetReq.Events, "prerequest", nil, nil, targetReq.Request.Header)
-				body, _, statusCode, statusText := c.ExecuteRequest(ctx, targetReq.Request)
+				c.Processor.RunScriptsWithLocal(targetReq.Events, "prerequest", nil, nil, targetReq.Request.Header, workflowVars)
+				body, _, statusCode, statusText := c.ExecuteRequestWithLocal(ctx, targetReq.Request, workflowVars)
 				log.StatusCode = statusCode
 				log.StatusText = statusText
 				log.Body = body
@@ -107,10 +106,12 @@ func (c *Client) RunWorkflow(ctx context.Context, workflow *models.Workflow, req
 					for _, ext := range currentNode.Extracts {
 						val := gjson.Get(body, ext.SourcePath)
 						if val.Exists() {
-							c.Storage.VariableMap[ext.TargetVar] = val.String()
+							workflowVars[ext.TargetVar] = val.String()
 						}
 					}
-					c.Storage.SaveVariables()
+					// Optional: Should we save extracted variables to global storage too?
+					// The issue was about race conditions during execution.
+					// Let's keep them local for the run, and maybe save at the end if needed.
 				} else {
 					log.Error = "Request failed"
 					outcome = "failure"
@@ -130,6 +131,7 @@ func (c *Client) RunWorkflow(ctx context.Context, workflow *models.Workflow, req
 			if len(logs) > 0 {
 				lastBody = logs[len(logs)-1].Body
 			}
+			// Resolve variables in condition if needed? gjson doesn't do that, but our cond might.
 			val := gjson.Get(lastBody, currentNode.Condition)
 			if val.Exists() && (val.Type != gjson.False && val.String() != "") {
 				outcome = "success"
@@ -175,7 +177,7 @@ func (c *Client) RunWorkflow(ctx context.Context, workflow *models.Workflow, req
 			}
 
 		case "script":
-			c.Processor.RunScripts([]models.Event{{Listen: "test", Script: models.Script{Exec: strings.Split(currentNode.Script, "\n")}}}, "test", nil, nil, nil)
+			c.Processor.RunScriptsWithLocal([]models.Event{{Listen: "test", Script: models.Script{Exec: strings.Split(currentNode.Script, "\n")}}}, "test", nil, nil, nil, workflowVars)
 			log.StatusText = "Script Executed"
 			outcome = "success"
 

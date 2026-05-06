@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"postit/internal/models"
@@ -62,7 +63,7 @@ func (f *Fuzzer) Run(ctx context.Context, reqInfo models.RequestInfo, variables 
 	results := []FuzzResult{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	
+
 	sem := make(chan struct{}, maxConcurrentFuzz)
 
 	// 1. Identify injection points in Body (JSON only for now)
@@ -144,7 +145,10 @@ func (f *Fuzzer) executeFuzz(ctx context.Context, reqInfo models.RequestInfo, ke
 		fuzzedBody, _ = json.Marshal(clonedBody)
 	}
 
-	req, _ := http.NewRequest(reqInfo.Request.Method, fuzzedUrl, bytes.NewBuffer(fuzzedBody))
+	req, err := http.NewRequest(reqInfo.Request.Method, fuzzedUrl, bytes.NewBuffer(fuzzedBody))
+	if err != nil {
+		return FuzzResult{Field: key, Payload: payload, Error: "Failed to create request: " + err.Error(), ResponseTime: 0}
+	}
 	for _, h := range reqInfo.Request.Header {
 		req.Header.Add(h.Key, h.Value)
 	}
@@ -159,7 +163,11 @@ func (f *Fuzzer) executeFuzz(ctx context.Context, reqInfo models.RequestInfo, ke
 	if err != nil {
 		return FuzzResult{Field: key, Payload: payload, Error: err.Error(), ResponseTime: duration}
 	}
+	// Safe to defer after confirming resp is not nil
 	defer resp.Body.Close()
+
+	// Consume body to ensure connection can be reused
+	io.ReadAll(resp.Body)
 
 	return FuzzResult{
 		Field:        key,
