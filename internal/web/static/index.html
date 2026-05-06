@@ -1,9 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PostIt - Web Client</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>PostIt - Web Client</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
@@ -124,16 +127,17 @@
                 </div>
             </div>
 
-            <div class="tabs-container">
-                <div class="tab active" onclick="switchTab('body')">Body</div>
-                <div class="tab" onclick="switchTab('headers')">Headers</div>
-                <div class="tab" onclick="switchTab('mocks')">Mocks</div>
-                <div class="tab" onclick="switchTab('runner')">Runner</div>
-                <div class="tab" onclick="switchTab('hammer')">Hammer</div>
-                <div class="tab" onclick="switchTab('sql')">SQL</div>
-                <div class="tab" onclick="switchTab('scripts')">Pre-request</div>
-                <div class="tab" onclick="switchTab('tests')">Post-request</div>
-            </div>
+<div class="tabs-container">
+<div class="tab active" onclick="switchTab('body')">Body</div>
+<div class="tab" onclick="switchTab('headers')">Headers</div>
+<div class="tab" onclick="switchTab('mocks')">Mocks</div>
+<div class="tab" onclick="switchTab('runner')">Runner</div>
+<div class="tab" onclick="switchTab('hammer')">Hammer</div>
+<div class="tab" onclick="switchTab('sql')">SQL</div>
+<div class="tab" onclick="switchTab('scripts')">Pre-request</div>
+<div class="tab" onclick="switchTab('tests')">Post-request</div>
+<div class="tab" onclick="switchTab('note')">Note</div>
+</div>
 
             <div id="editor-container">
                 <div id="pane-body" class="pane active">
@@ -216,8 +220,18 @@
                 </div>
                 <div id="pane-sql" class="pane">
                     <div style="padding: 16px; background: var(--bg-sidebar); border-radius: 8px; border: 1px solid var(--border-color); flex: 1; display: flex; flex-direction: column;">
-                        <div style="font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 10px;"><i data-lucide="database"></i> SQL Sidekick (SQLite)</div>
-                        <div class="form-group"><label>DB Path (SQLite / Postgres / MySQL)</label><input type="text" id="sql-db-path" placeholder="C:/path/to/db.sqlite or postgres://user:pass@host/db"></div>
+                        <div style="font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 10px;"><i data-lucide="database"></i> SQL Sidekick</div>
+                        <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+                            <div class="form-group" style="margin-bottom: 0; width: 120px;">
+                                <label>Driver</label>
+                                <select id="sql-driver" style="width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 8px; border-radius: var(--radius); outline: none;">
+                                    <option value="sqlite">SQLite</option>
+                                    <option value="postgres">Postgres</option>
+                                    <option value="mysql">MySQL</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0; flex: 1;"><label>DB Path / DSN</label><input type="text" id="sql-db-path" placeholder="C:/path/to/db.sqlite or postgres://user:pass@host/db"></div>
+                        </div>
                         <div style="display: flex; gap: 16px; margin-bottom: 16px;">
                             <div class="form-group" style="margin-bottom: 0; flex: 1;"><label>Extract to Var</label><input type="text" id="sql-target-var" placeholder="e.g. user_id"></div>
                             <div class="form-group" style="margin-bottom: 0; flex: 1;"><label>From Column</label><input type="text" id="sql-target-col" placeholder="e.g. id"></div>
@@ -227,9 +241,10 @@
                         <div id="sql-results" style="margin-top: 24px; flex: 1; overflow: auto; border-top: 1px solid var(--border-color); padding-top: 16px;"></div>
                     </div>
                 </div>
-                <div id="pane-scripts" class="pane"><textarea id="req-prerequest-input" spellcheck="false" placeholder="// Pre-request Script (JavaScript)"></textarea></div>
-                <div id="pane-tests" class="pane"><textarea id="req-tests-input" spellcheck="false" placeholder="// Post-request Script (JavaScript)"></textarea></div>
-            </div>
+<div id="pane-scripts" class="pane"><textarea id="req-prerequest-input" spellcheck="false" placeholder="// Pre-request Script (JavaScript)"></textarea></div>
+<div id="pane-tests" class="pane"><textarea id="req-tests-input" spellcheck="false" placeholder="// Post-request Script (JavaScript)"></textarea></div>
+<div id="pane-note" class="pane"><textarea id="req-note-input" spellcheck="false" placeholder="// Add notes about this request..."></textarea></div>
+</div>
         </div>
 
         <div class="resizer-v" id="resizer-response"></div>
@@ -251,12 +266,14 @@
                 <div class="filter-bar">
                     <span>FILTER</span>
                     <input type="text" id="json-filter" placeholder="e.g. data.id (supports paths, predicates, projections, and pipes)" oninput="applyJsonFilter(this.value)">
-                    <button class="sidebar-action-btn" style="padding: 4px 10px;" onclick="beautifyResponseJson()"><i data-lucide="sparkles"></i> Beautify</button>
+                    <div class="response-actions">
+                        <button class="sidebar-action-btn" title="Expand All (Alt+Shift++)" onclick="expandAllJson()"><i data-lucide="maximize-2"></i></button>
+                        <button class="sidebar-action-btn" title="Collapse All (Alt+Shift+-)" onclick="collapseAllJson()"><i data-lucide="minimize-2"></i></button>
+                        <button class="sidebar-action-btn" title="Beautify JSON" onclick="beautifyResponseJson()"><i data-lucide="sparkles"></i></button>
+                        <button class="sidebar-action-btn" title="Copy clean JSON" onclick="copyResponseToClipboard()"><i data-lucide="copy"></i></button>
+                    </div>
                 </div>
                 <div id="response-body-container">
-                    <div class="response-actions">
-                        <button class="sidebar-action-btn" title="Copy to Clipboard" onclick="copyResponseToClipboard()"><i data-lucide="copy"></i> Copy</button>
-                    </div>
                     <pre id="response-body">// Ready</pre>
                 </div>
             </div>
@@ -308,14 +325,21 @@
         <div class="tabs-container" style="margin-bottom: 20px; padding: 0;">
             <div class="tab active" id="tab-import-curl" onclick="switchImportTab('curl')">cURL</div>
             <div class="tab" id="tab-import-openapi" onclick="switchImportTab('openapi')">OpenAPI / Swagger</div>
+            <div class="tab" id="tab-import-postman" onclick="switchImportTab('postman')">Postman</div>
         </div>
         <div id="import-curl-pane">
             <div class="form-group"><label>Paste cURL command</label><textarea id="curl-input" style="height: 200px; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius); width: 100%; outline: none; font-family: monospace;"></textarea></div>
             <div class="modal-actions"><button class="btn-secondary" onclick="closeModal('import-modal')">Cancel</button><button class="btn-primary" onclick="importCurl()">Import cURL</button></div>
         </div>
         <div id="import-openapi-pane" style="display: none;">
-            <div class="form-group"><label>Paste OpenAPI JSON Spec</label><textarea id="openapi-input" style="height: 200px; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius); width: 100%; outline: none; font-family: monospace;"></textarea></div>
+            <div class="form-group"><label>Upload OpenAPI JSON/YAML File</label><input type="file" id="openapi-file" accept=".json,.yaml,.yml" onchange="handleImportFile(this, 'openapi-input')" style="margin-bottom: 12px; border: 1px solid var(--border-color); padding: 8px; width: 100%; border-radius: var(--radius); background: var(--bg-input); color: white;"></div>
+            <div class="form-group"><label>Or Paste OpenAPI JSON Spec</label><textarea id="openapi-input" style="height: 180px; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius); width: 100%; outline: none; font-family: monospace;"></textarea></div>
             <div class="modal-actions"><button class="btn-secondary" onclick="closeModal('import-modal')">Cancel</button><button class="btn-primary" onclick="importOpenAPI()">Import Spec</button></div>
+        </div>
+        <div id="import-postman-pane" style="display: none;">
+            <div class="form-group"><label>Upload Postman Collection File</label><input type="file" id="postman-file" accept=".json" onchange="handleImportFile(this, 'postman-input')" style="margin-bottom: 12px; border: 1px solid var(--border-color); padding: 8px; width: 100%; border-radius: var(--radius); background: var(--bg-input); color: white;"></div>
+            <div class="form-group"><label>Or Paste Postman Collection JSON</label><textarea id="postman-input" style="height: 180px; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius); width: 100%; outline: none; font-family: monospace;"></textarea></div>
+            <div class="modal-actions"><button class="btn-secondary" onclick="closeModal('import-modal')">Cancel</button><button class="btn-primary" onclick="importPostman()">Import Collection</button></div>
         </div>
     </div></div>
     <div id="vault-modal" class="modal-overlay"><div class="modal"><h3 class="modal-title">Unlock Vault</h3><div class="form-group"><label>Master Password</label><input type="password" id="vault-password"></div><div class="modal-actions"><button class="btn-secondary" onclick="closeModal('vault-modal')">Cancel</button><button class="btn-primary" onclick="unlockVault()">Unlock</button></div></div></div>
@@ -327,10 +351,11 @@
         <div class="context-menu-item" onclick="showNewModalFromContext()">New Request...</div>
         <div class="context-menu-item" onclick="showEditModal()">Rename / Move...</div>
         <div class="context-menu-item" onclick="showDuplicateModal()">Duplicate</div>
+        <div class="context-menu-item" onclick="exportPostman()">Export Postman Collection</div>
         <div style="height: 1px; background: var(--border-color); margin: 4px 0;"></div>
         <div class="context-menu-item danger" onclick="deleteCurrentItem()">Delete</div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
 </body>
 </html>

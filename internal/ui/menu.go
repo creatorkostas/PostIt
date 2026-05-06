@@ -129,7 +129,7 @@ func (m *Menu) CreateNewRequest() *models.RequestInfo {
 	return &newReq
 }
 
-func (m *Menu) DuplicateRequest(reqInfo *models.RequestInfo) *models.RequestInfo {
+func (m *Menu) DuplicateRequest(reqInfo *models.RequestInfo, allRequests []models.RequestInfo) *models.RequestInfo {
 	newPath := ""
 	survey.AskOne(&survey.Input{
 		Message: "New Path:",
@@ -138,6 +138,13 @@ func (m *Menu) DuplicateRequest(reqInfo *models.RequestInfo) *models.RequestInfo
 
 	if newPath == "" {
 		return nil
+	}
+
+	maxOrder := -1
+	for _, r := range allRequests {
+		if r.Order > maxOrder {
+			maxOrder = r.Order
+		}
 	}
 
 	// Clone events
@@ -157,7 +164,7 @@ func (m *Menu) DuplicateRequest(reqInfo *models.RequestInfo) *models.RequestInfo
 		Path:    newPath,
 		Request: reqInfo.Request.DeepCopy(),
 		Events:  eventsCopy,
-		Order:   reqInfo.Order + 1,
+		Order:   maxOrder + 1,
 	}
 
 	m.Storage.SaveSingleRequest(newReq)
@@ -238,12 +245,12 @@ func (m *Menu) HandleRequestSelection(reqInfo *models.RequestInfo, allRequests *
 		survey.AskOne(prompt, &action)
 
 		switch action {
-		case "Send":
-			fmt.Println("\n--- Executing Scripts BEFORE Request ---")
-			m.Processor.RunScripts(reqInfo.Events, "prerequest", nil, nil, reqInfo.Request.Header)
-			m.Processor.RunScripts(reqInfo.Events, "test", nil, nil, reqInfo.Request.Header)
-			
-			startTime := time.Now()
+	case "Send":
+		fmt.Println("\n--- Executing Scripts BEFORE Request ---")
+		m.Processor.RunScripts(reqInfo.Events, "prerequest", nil, nil, reqInfo.Request.Header)
+		// Note: "test" scripts should only run AFTER the request
+
+		startTime := time.Now()
 			respBody, respHeaders, statusCode, statusText := m.Client.ExecuteRequest(context.Background(), reqInfo.Request)
 			duration := time.Since(startTime).Milliseconds()
 
@@ -278,7 +285,7 @@ func (m *Menu) HandleRequestSelection(reqInfo *models.RequestInfo, allRequests *
 		case "Move/Rename":
 			m.MoveRequest(reqInfo)
 		case "Duplicate":
-			if newReq := m.DuplicateRequest(reqInfo); newReq != nil {
+			if newReq := m.DuplicateRequest(reqInfo, *allRequests); newReq != nil {
 				*allRequests = append(*allRequests, *newReq)
 			}
 			return

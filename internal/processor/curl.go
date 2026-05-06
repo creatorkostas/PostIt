@@ -60,13 +60,25 @@ func ParseCurl(curlCommand string) *models.Request {
 			}
 		case "-u", "--user":
 			if i+1 < len(parts) {
-				// Basic Auth
-				req.Auth = &models.Auth{
-					Type: "basic",
-					Basic: []models.BasicAuth{
-						{Key: "username", Value: strings.Split(parts[i+1], ":")[0]},
-						{Key: "password", Value: strings.SplitN(parts[i+1], ":", 2)[1]},
-					},
+				authArg := parts[i+1]
+				if strings.Contains(authArg, ":") {
+					authParts := strings.SplitN(authArg, ":", 2)
+					req.Auth = &models.Auth{
+						Type: "basic",
+						Basic: []models.BasicAuth{
+							{Key: "username", Value: authParts[0]},
+							{Key: "password", Value: authParts[1]},
+						},
+					}
+				} else {
+					// Only username provided
+					req.Auth = &models.Auth{
+						Type: "basic",
+						Basic: []models.BasicAuth{
+							{Key: "username", Value: authArg},
+							{Key: "password", Value: ""},
+						},
+					}
 				}
 				i++
 			}

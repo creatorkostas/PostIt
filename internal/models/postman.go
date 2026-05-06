@@ -12,8 +12,10 @@ type Collection struct {
 }
 
 type Info struct {
-	Name   string `json:"name"`
-	Schema string `json:"schema"`
+	PostmanID string `json:"_postman_id,omitempty"`
+	Name      string `json:"name"`
+	Schema    string `json:"schema"`
+	ExporterID string `json:"_exporter_id,omitempty"`
 }
 
 type Item struct {
@@ -114,14 +116,18 @@ type MockStat struct {
 }
 
 type RequestInfo struct {
-	Path      string         `json:"path"`
-	Request   *Request       `json:"request"`
+	Path string `json:"path"`
+	Request *Request `json:"request"`
 	Responses []MockResponse `json:"responses,omitempty"`
-	Events    []Event        `json:"events,omitempty"`
-	Order     int            `json:"order"`
-	SQLQuery  string         `json:"sql_query,omitempty"`
-	DBPath    string         `json:"db_path,omitempty"`
-	Schema    string         `json:"schema,omitempty"`
+	Events []Event `json:"events,omitempty"`
+	Order int `json:"order"`
+	SQLQuery string `json:"sql_query,omitempty"`
+	DBPath string `json:"db_path,omitempty"`
+	SQLDriver string `json:"sql_driver,omitempty"`
+	SQLTargetVar string `json:"sql_target_var,omitempty"`
+	SQLTargetCol string `json:"sql_target_col,omitempty"`
+	Schema string `json:"schema,omitempty"`
+	Note string `json:"note,omitempty"`
 }
 
 func ReconstructItems(reqs []RequestInfo) []Item {
@@ -176,24 +182,54 @@ func ReconstructItems(reqs []RequestInfo) []Item {
 	return root
 }
 
+// SortInsertPosition finds the correct insertion position for a new item
+// Returns the index where the item should be inserted to maintain sorted order
+func SortInsertPosition(items []Item, newItem Item) int {
+	for i, item := range items {
+		// Compare folders vs requests
+		newIsFolder := newItem.Request == nil && newItem.Item != nil
+		existingIsFolder := item.Request == nil && item.Item != nil
+
+		if newIsFolder && !existingIsFolder {
+			return i // Folders come before requests
+		}
+		if !newIsFolder && existingIsFolder {
+			continue // Keep looking for a request
+		}
+
+		// Same type - compare by Order
+		if newItem.Order < item.Order {
+			return i
+		}
+
+		// Same Order - compare alphabetically
+		if newItem.Order == item.Order {
+			if strings.ToLower(newItem.Name) < strings.ToLower(item.Name) {
+				return i
+			}
+		}
+	}
+	return len(items)
+}
+
 func sortItems(items []Item) {
 	sort.Slice(items, func(i, j int) bool {
 		// Rule 1: Folders first
 		iIsFolder := items[i].Request == nil && items[i].Item != nil
 		jIsFolder := items[j].Request == nil && items[j].Item != nil
-		
+
 		if iIsFolder && !jIsFolder {
 			return true
 		}
 		if !iIsFolder && jIsFolder {
 			return false
 		}
-		
+
 		// Rule 2: If both are the same type, use Order
 		if items[i].Order != items[j].Order {
 			return items[i].Order < items[j].Order
 		}
-		
+
 		// Rule 3: Alphabetical fallback
 		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
 	})
@@ -203,4 +239,76 @@ func sortItems(items []Item) {
 			sortItems(items[i].Item)
 		}
 	}
+}
+
+// ReconstructItemsWithDelta rebuilds only the affected subtree when a single request changes
+// This is more efficient than ReconstructItems when only one request is modified
+func ReconstructItemsWithDelta(existing []Item, changedReq RequestInfo) []Item {
+	parts := strings.Split(changedReq.Path, " > ")
+
+	// Find or create the folder path
+	currentItems := &existing
+	for i, part := range parts {
+		isLast := i == len(parts)-1
+
+		if isLast {
+			// Update or insert the request
+			foundIdx := -1
+			for j, item := range *currentItems {
+				if item.Name == part && item.Request != nil {
+					foundIdx = j
+					break
+				}
+			}
+			if foundIdx >= 0 {
+				// Update existing
+				(*currentItems)[foundIdx] = Item{
+					Name:     part,
+					Request:  changedReq.Request,
+					Response: changedReq.Responses,
+					Event:    changedReq.Events,
+					Order:    changedReq.Order,
+				}
+			} else {
+				// Insert new in sorted position
+				newItem := Item{
+					Name:     part,
+					Request:  changedReq.Request,
+					Response: changedReq.Responses,
+					Event:    changedReq.Events,
+					Order:    changedReq.Order,
+				}
+				pos := SortInsertPosition(*currentItems, newItem)
+				*currentItems = append(*currentItems, Item{})
+				copy((*currentItems)[pos+1:], (*currentItems)[pos:])
+				(*currentItems)[pos] = newItem
+			}
+		} else {
+			// Find or create folder
+			foundIdx := -1
+			for j, item := range *currentItems {
+				if item.Name == part && item.Request == nil {
+					foundIdx = j
+					break
+				}
+			}
+			if foundIdx >= 0 {
+				currentItems = &(*currentItems)[foundIdx].Item
+			} else {
+				// Create new folder at sorted position
+				newFolder := Item{
+					Name:  part,
+					Item:  []Item{},
+					Order: changedReq.Order,
+				}
+				pos := SortInsertPosition(*currentItems, newFolder)
+				*currentItems = append(*currentItems, Item{})
+				copy((*currentItems)[pos+1:], (*currentItems)[pos:])
+				(*currentItems)[pos] = newFolder
+				currentItems = &(*currentItems)[pos].Item
+			}
+		}
+	}
+
+	return existing
 }

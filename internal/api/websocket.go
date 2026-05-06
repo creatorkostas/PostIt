@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -9,6 +10,13 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+)
+
+// WebSocket configuration constants
+const (
+	MaxWSMessages       = 1000              // Maximum messages to keep in buffer
+	wsHandshakeTimeout  = 10 * time.Second  // WebSocket dial timeout
+	wsCloseNormal       = 1000              // Normal closure code
 )
 
 type WSMessage struct {
@@ -22,6 +30,7 @@ type WSClient struct {
 	Messages []WSMessage
 	mu       sync.Mutex
 	connMu   sync.Mutex
+	cancel   context.CancelFunc
 }
 
 func NewWSClient() *WSClient {
@@ -55,6 +64,14 @@ func (c *WSClient) Connect(url string) error {
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 
+	// 1. Cancel previous reader if it exists
+	if c.cancel != nil {
+		c.cancel()
+		if c.Conn != nil {
+			c.Conn.Close()
+		}
+	}
+
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
@@ -65,27 +82,40 @@ func (c *WSClient) Connect(url string) error {
 	}
 	
 	c.Conn = conn
+	ctx, cancel := context.WithCancel(context.Background())
+	c.cancel = cancel
 	
 	// Start listener
-	go func() {
+	go func(ctx context.Context) {
 		currentConn := conn
 		defer func() {
-			c.connMu.Lock()
 			currentConn.Close()
+			c.connMu.Lock()
 			if c.Conn == currentConn {
 				c.Conn = nil
 			}
 			c.connMu.Unlock()
 		}()
 		for {
-			_, message, err := currentConn.ReadMessage()
-			if err != nil {
-				c.addMessage("error", err.Error())
-				break
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				_, message, err := currentConn.ReadMessage()
+				if err != nil {
+					// Check if it's a normal closure or if we cancelled it
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						c.addMessage("error", err.Error())
+						return
+					}
+				}
+				c.addMessage("received", string(message))
 			}
-			c.addMessage("received", string(message))
 		}
-	}()
+	}(ctx)
 	
 	return nil
 }
@@ -109,6 +139,10 @@ func (c *WSClient) Send(message string) error {
 func (c *WSClient) addMessage(msgType, content string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Prevent unbounded memory growth with circular buffer
+	if len(c.Messages) >= MaxWSMessages {
+		c.Messages = c.Messages[1:] // Remove oldest message
+	}
 	c.Messages = append(c.Messages, WSMessage{
 		Type:      msgType,
 		Content:   content,

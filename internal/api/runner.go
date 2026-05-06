@@ -34,23 +34,18 @@ func (r *Runner) RunIteration(ctx context.Context, req models.RequestInfo, data 
 	results := []RunnerResult{}
 
 	for i, row := range data {
-		// Temporary override environment with data row
-		originalVars := make(map[string]string)
-		for k, v := range r.Storage.VariableMap {
-			originalVars[k] = v
-		}
-
-		// Inject CSV/JSON row into variables
+		// Inject CSV/JSON row into local variables
+		localVars := make(map[string]string)
 		for k, v := range row {
-			r.Storage.VariableMap[k] = v
+			localVars[k] = v
 		}
 
 		startTime := time.Now().UnixNano() / int64(time.Millisecond)
-		body, _, statusCode, statusText := r.Client.ExecuteRequest(ctx, req.Request)
+		body, _, statusCode, statusText := r.Client.ExecuteRequestWithLocal(ctx, req.Request, localVars)
 		duration := (time.Now().UnixNano() / int64(time.Millisecond)) - startTime
 
 		// Post-request scripts (Tests)
-		r.Processor.RunScripts(req.Events, "test", []byte(body), nil, req.Request.Header)
+		r.Processor.RunScriptsWithLocal(req.Events, "test", []byte(body), nil, req.Request.Header, localVars)
 
 		results = append(results, RunnerResult{
 			Iteration:  i + 1,
@@ -58,9 +53,6 @@ func (r *Runner) RunIteration(ctx context.Context, req models.RequestInfo, data 
 			StatusText: statusText,
 			Duration:   duration,
 		})
-
-		// Restore original variables
-		r.Storage.VariableMap = originalVars
 	}
 
 	return results

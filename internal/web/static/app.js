@@ -27,13 +27,38 @@
             }, 3000);
         }
 
+        let lastFilteredResult = null;
+
         function copyResponseToClipboard() {
-            const el = document.getElementById('response-body');
-            const text = el.textContent;
+            let text = "";
+            const filterVal = document.getElementById('json-filter')?.value;
+            
+            if (filterVal && lastFilteredResult !== null) {
+                text = JSON.stringify(lastFilteredResult, null, 4);
+            } else if (currentRequest && responseCache[currentRequest.path]) {
+                text = responseCache[currentRequest.path].body;
+            } else {
+                text = document.getElementById('response-body').textContent;
+            }
+            
             navigator.clipboard.writeText(text).then(() => {
                 showToast('Copied to clipboard!', 'success');
             }).catch(err => {
                 showToast('Failed to copy', 'error');
+            });
+        }
+
+        function expandAllJson() {
+            document.querySelectorAll('#response-body details').forEach(el => el.open = true);
+        }
+
+        function collapseAllJson() {
+            document.querySelectorAll('#response-body details').forEach(el => el.open = false);
+        }
+
+        function copyJsonPath(path) {
+            navigator.clipboard.writeText(path).then(() => {
+                showToast(`Path copied: ${path}`, 'success');
             });
         }
 
@@ -50,6 +75,47 @@
                 else if (/null/.test(match)) cls = 'json-null';
                 return '<span class="' + cls + '">' + match + '</span>';
             });
+        }
+
+        function escapeHtml(text) {
+            if (typeof text !== 'string') return text;
+            return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function renderJsonCollapsible(data, path = '') {
+            if (data === null) return '<span class="json-null">null</span>';
+            const type = typeof data;
+            if (type === 'number') return `<span class="json-number">${data}</span>`;
+            if (type === 'boolean') return `<span class="json-boolean">${data}</span>`;
+            if (type === 'string') return `<span class="json-string">"${escapeHtml(data)}"</span>`;
+            
+            if (Array.isArray(data)) {
+                if (data.length === 0) return '<span class="json-bracket">[]</span>';
+                let html = '<details open class="json-details">';
+                html += `<summary class="json-summary"><span class="json-bracket">[</span><span class="json-summary-preview"> ${data.length} items </span></summary>`;
+                html += '<div class="json-collapsible-content">';
+                html += data.map((item, i) => {
+                    const currentPath = `${path}[${i}]`;
+                    return `<div class="json-line">${renderJsonCollapsible(item, currentPath)}${i < data.length - 1 ? '<span class="json-comma">,</span>' : ''}</div>`;
+                }).join('');
+                html += '</div><span class="json-bracket">]</span></details>';
+                return html;
+            }
+            
+            if (type === 'object') {
+                const keys = Object.keys(data);
+                if (keys.length === 0) return '<span class="json-bracket">{}</span>';
+                let html = '<details open class="json-details">';
+                html += `<summary class="json-summary"><span class="json-bracket">{</span><span class="json-summary-preview"> ${keys.length} keys </span></summary>`;
+                html += '<div class="json-collapsible-content">';
+                html += keys.map((key, i) => {
+                    const currentPath = path ? `${path}.${key}` : key;
+                    return `<div class="json-line"><span class="json-key" onclick="copyJsonPath('${currentPath}')" title="Click to copy path: ${currentPath}">"${escapeHtml(key)}"</span>: ${renderJsonCollapsible(data[key], currentPath)}${i < keys.length - 1 ? '<span class="json-comma">,</span>' : ''}</div>`;
+                }).join('');
+                html += '</div><span class="json-bracket">}</span></details>';
+                return html;
+            }
+            return escapeHtml(String(data));
         }
 
         function updateRequestHighlight() {
@@ -128,7 +194,10 @@
             const cached = responseCache[currentRequest.path];
             if (!cached || !cached.body) return;
             const el = document.getElementById('response-body');
-            try { const obj = JSON.parse(el.textContent); el.innerHTML = syntaxHighlight(obj); } catch (e) { showToast("Invalid JSON", "error"); }
+            try { 
+                const obj = JSON.parse(cached.body); 
+                el.innerHTML = renderJsonCollapsible(obj); 
+            } catch (e) { showToast("Invalid JSON", "error"); }
         }
 
         async function init() {
@@ -190,17 +259,40 @@
         }
 
         // New Feature Functions
+        function handleImportFile(input, targetId) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                document.getElementById(targetId).value = e.target.result;
+            };
+            reader.readAsText(file);
+        }
+
         function switchImportTab(tab) {
             document.getElementById('tab-import-curl').classList.toggle('active', tab === 'curl');
             document.getElementById('tab-import-openapi').classList.toggle('active', tab === 'openapi');
+            document.getElementById('tab-import-postman').classList.toggle('active', tab === 'postman');
             document.getElementById('import-curl-pane').style.display = tab === 'curl' ? 'block' : 'none';
             document.getElementById('import-openapi-pane').style.display = tab === 'openapi' ? 'block' : 'none';
+            document.getElementById('import-postman-pane').style.display = tab === 'postman' ? 'block' : 'none';
         }
 
         async function importOpenAPI() {
             const spec = document.getElementById('openapi-input').value;
             try {
                 const resp = await fetch('/api/import/openapi', { method: 'POST', body: JSON.stringify({ json: spec }) });
+                const data = await resp.json();
+                showToast(`Imported ${data.count} requests!`, "success");
+                closeModal('import-modal');
+                init();
+            } catch (e) { showToast("Import failed: " + e.message, "error"); }
+        }
+
+        async function importPostman() {
+            const json = document.getElementById('postman-input').value;
+            try {
+                const resp = await fetch('/api/import/postman', { method: 'POST', body: JSON.stringify({ json }) });
                 const data = await resp.json();
                 showToast(`Imported ${data.count} requests!`, "success");
                 closeModal('import-modal');
@@ -335,7 +427,7 @@
 
             rHeaders.innerHTML = Object.entries(h).map(([k, v]) => `<div><span style="color:var(--accent); font-weight:600;">${k}:</span> ${v.join(', ')}</div>`).join('');
             meta.innerHTML = `<div style="display:flex;gap:12px;align-items:center"><span>${mHtmlText}</span><button class="sidebar-action-btn" onclick="setBaseline()">Baseline</button><button class="sidebar-action-btn" onclick="saveAsMock()">Mock</button></div>`;
-            rBody.innerHTML = isJson ? syntaxHighlight(displayBody) : body;
+            rBody.innerHTML = isJson ? renderJsonCollapsible(displayBody) : body;
             renderJWT(body, h);
             
             // Update cache for this path so it stays if we switch tabs
@@ -681,6 +773,7 @@
         }
 
         async function runSQL() {
+            const driver = document.getElementById('sql-driver').value;
             const dbPath = document.getElementById('sql-db-path').value;
             const query = document.getElementById('sql-query').value;
             const targetVar = document.getElementById('sql-target-var').value;
@@ -688,7 +781,7 @@
             const resultsDiv = document.getElementById('sql-results');
             resultsDiv.textContent = "Executing...";
             try {
-                const resp = await fetch('/api/sql', { method: 'POST', body: JSON.stringify({ path: currentRequest ? currentRequest.path : "", db_path: dbPath, query: query, targetVar, targetCol }) });
+                const resp = await fetch('/api/sql', { method: 'POST', body: JSON.stringify({ driver: driver, connStr: dbPath, query: query, targetVar, targetCol }) });
                 if (!resp.ok) throw new Error(await resp.text());
                 const data = await resp.json();
                 let html = '<table style="width:100%; border-collapse:collapse; font-size:12px;"><thead><tr style="border-bottom:1px solid var(--border-color);">';
@@ -715,10 +808,21 @@
         function createRequestNode(path, method, name) {
             const div = document.createElement('div');
             div.className = 'request-item'; div.dataset.path = path;
-            div.innerHTML = `<span class="method-tag method-${method}">${method}</span><span>${name}</span>`;
+            div.innerHTML = `
+                <span class="method-tag method-${method}">${method}</span>
+                <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${name}</span>
+                <button class="zap-btn" onclick="event.stopPropagation(); openAndSend('${path}')" title="Open and Send">
+                    <i data-lucide="zap" style="width: 14px; height: 14px;"></i>
+                </button>
+            `;
             div.onclick = (e) => { e.stopPropagation(); selectRequest(path); };
             div.oncontextmenu = (e) => { e.preventDefault(); e.stopPropagation(); selectRequest(path); showContextMenu(e.pageX, e.pageY, path); };
             return div;
+        }
+
+        async function openAndSend(path) {
+            selectRequest(path);
+            await sendRequest();
         }
 
         function renderTree(container, items, prefix) {
@@ -747,8 +851,11 @@
             document.getElementById('req-body-input').value = currentRequest.request.body ? (currentRequest.request.body.raw || '') : '';
             updateRequestHighlight();
             
+            document.getElementById('sql-driver').value = currentRequest.sql_driver || "sqlite";
             document.getElementById('sql-db-path').value = currentRequest.db_path || "";
             document.getElementById('sql-query').value = currentRequest.sql_query || "";
+            document.getElementById('sql-target-var').value = currentRequest.sql_target_var || "";
+            document.getElementById('sql-target-col').value = currentRequest.sql_target_col || "";
             
             const urlEncList = document.getElementById('req-urlencoded-list'); urlEncList.innerHTML = '';
             (currentRequest.request.body ? currentRequest.request.body.urlencoded || [] : []).forEach(u => {
@@ -760,9 +867,10 @@
                 const d = document.createElement('div'); d.className = 'header-row'; d.innerHTML = `<input type="text" class="header-key" value="${h.key}"><input type="text" class="header-value" value="${h.value}"><button class="sidebar-action-btn" onclick="this.parentElement.remove()">✕</button>`;
                 headList.appendChild(d);
             });
-            const pre = (currentRequest.events || []).find(e => e.listen === 'prerequest'); const test = (currentRequest.events || []).find(e => e.listen === 'test');
-            document.getElementById('req-prerequest-input').value = pre ? pre.script.exec.join('\n') : '';
-            document.getElementById('req-tests-input').value = test ? test.script.exec.join('\n') : '';
+const pre = (currentRequest.events || []).find(e => e.listen === 'prerequest'); const test = (currentRequest.events || []).find(e => e.listen === 'test');
+document.getElementById('req-prerequest-input').value = pre ? pre.script.exec.join('\n') : '';
+document.getElementById('req-tests-input').value = test ? test.script.exec.join('\n') : '';
+document.getElementById('req-note-input').value = currentRequest.note || '';
             
             const mocksList = document.getElementById('mocks-list'); mocksList.innerHTML = currentRequest.responses && currentRequest.responses.length ? '' : '<div style="padding:16px; color:var(--text-secondary); font-style:italic; font-size:12px;">No mocks.</div>';
             (currentRequest.responses || []).forEach(m => {
@@ -792,13 +900,56 @@
             lucide.createIcons();
         }
 
-        async function saveCurrentRequest() {
-            if (!currentRequest) return;
-            const urlencoded = Array.from(document.querySelectorAll('#req-urlencoded-list .header-row')).map(row => ({ key: row.querySelector('.urlencoded-key').value, value: row.querySelector('.urlencoded-value').value })).filter(u => u.key !== '');
-            const headers = Array.from(document.querySelectorAll('#req-headers-list .header-row')).map(row => ({ key: row.querySelector('.header-key').value, value: row.querySelector('.header-value').value })).filter(h => h.key !== '');
-            const resp = await fetch('/api/requests/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ oldPath: currentRequest.path, newPath: currentRequest.path, method: document.getElementById('req-method-display').textContent, url: document.getElementById('req-url-input').value, bodyMode: document.querySelector('input[name="body-mode"]:checked').value, bodyRaw: document.getElementById('req-body-input').value, urlencoded, headers, preRequestScript: document.getElementById('req-prerequest-input').value, testScript: document.getElementById('req-tests-input').value }) });
-            if (resp.ok) { const data = await resp.json(); const idx = flatRequests.findIndex(r => r.path === currentRequest.path); if (idx !== -1) { flatRequests[idx] = data; currentRequest = data; } showToast("Saved!", "success"); }
-        }
+async function saveCurrentRequest() {
+  if (!currentRequest) return;
+  const urlencoded = Array.from(document.querySelectorAll('#req-urlencoded-list .header-row')).map(row => ({ key: row.querySelector('.urlencoded-key').value, value: row.querySelector('.urlencoded-value').value })).filter(u => u.key !== '');
+  const headers = Array.from(document.querySelectorAll('#req-headers-list .header-row')).map(row => ({ key: row.querySelector('.header-key').value, value: row.querySelector('.header-value').value })).filter(h => h.key !== '');
+  try {
+    const resp = await fetch('/api/requests/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        oldPath: currentRequest.path,
+        newPath: currentRequest.path,
+        method: document.getElementById('req-method-display').textContent,
+        url: document.getElementById('req-url-input').value,
+        bodyMode: document.querySelector('input[name="body-mode"]:checked').value,
+        bodyRaw: document.getElementById('req-body-input').value,
+        urlencoded,
+        headers,
+        preRequestScript: document.getElementById('req-prerequest-input').value,
+        testScript: document.getElementById('req-tests-input').value,
+        sqlQuery: document.getElementById('sql-query').value,
+        dbPath: document.getElementById('sql-db-path').value,
+        sqlDriver: document.getElementById('sql-driver').value,
+        sqlTargetVar: document.getElementById('sql-target-var').value,
+        sqlTargetCol: document.getElementById('sql-target-col').value,
+        note: document.getElementById('req-note-input').value
+      })
+    });
+    if (resp.ok) {
+      const text = await resp.text();
+      if (!text) {
+        showToast("Save failed: Empty response from server", "error");
+        return;
+      }
+      try {
+        const data = JSON.parse(text);
+        const idx = flatRequests.findIndex(r => r.path === currentRequest.path);
+        if (idx !== -1) { flatRequests[idx] = data; currentRequest = data; }
+        showToast("Saved!", "success");
+      } catch (parseErr) {
+        showToast("Save failed: Invalid JSON response - " + parseErr.message, "error");
+        console.error("Invalid JSON response:", text);
+      }
+    } else {
+      const errText = await resp.text();
+      showToast("Save failed: " + errText, "error");
+    }
+  } catch (e) {
+    showToast("Save failed: " + e.message, "error");
+  }
+}
 
         async function sendRequest() {
             if (!currentRequest) return;
@@ -836,7 +987,7 @@
                 rHeaders.innerHTML = Object.entries(h).map(([k, v]) => `<div><span style="color:var(--accent); font-weight:600;">${k}:</span> ${v.join(', ')}</div>`).join('');
                 responseCache[currentRequest.path] = { body, headers: rHeaders.innerHTML, meta: mHtmlText, isJson, rawHeaders: h };
                 meta.innerHTML = `<div style="display:flex;gap:12px;align-items:center"><span>${mHtmlText}</span><button class="sidebar-action-btn" onclick="setBaseline()">Baseline</button><button class="sidebar-action-btn" onclick="saveAsMock()">Mock</button></div>`;
-                rBody.innerHTML = isJson ? syntaxHighlight(displayBody) : body;
+                rBody.innerHTML = isJson ? renderJsonCollapsible(displayBody) : body;
                 renderJWT(body, h);
                 if (activeSidebar === 'history') renderHistory();
                 lucide.createIcons();
@@ -910,7 +1061,28 @@
         async function saveEditRequest() {
             const newPath = document.getElementById('edit-path').value; const req = flatRequests.find(r => r.path === menuTarget);
             const pre = (req.events || []).find(e => e.listen === 'prerequest'); const test = (req.events || []).find(e => e.listen === 'test');
-            const resp = await fetch('/api/requests/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ oldPath: menuTarget, newPath: newPath, method: document.getElementById('edit-method').value, url: document.getElementById('edit-url').value, bodyMode: (req.request.body && req.request.body.mode) || 'raw', bodyRaw: document.getElementById('req-body-input').value, urlencoded: req.request.body ? (req.request.body.urlencoded || []) : [], headers: req.request.header || [], preRequestScript: pre ? pre.script.exec.join('\n') : '', testScript: test ? test.script.exec.join('\n') : '' }) });
+            const resp = await fetch('/api/requests/update', { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify({ 
+                    oldPath: menuTarget, 
+                    newPath: newPath, 
+                    method: document.getElementById('edit-method').value, 
+                    url: document.getElementById('edit-url').value, 
+                    bodyMode: (req.request.body && req.request.body.mode) || 'raw', 
+                    bodyRaw: document.getElementById('req-body-input').value, 
+                    urlencoded: req.request.body ? (req.request.body.urlencoded || []) : [], 
+                    headers: req.request.header || [], 
+preRequestScript: pre ? pre.script.exec.join('\n') : '',
+testScript: test ? test.script.exec.join('\n') : '',
+sqlQuery: req.sql_query || '',
+dbPath: req.db_path || '',
+sqlDriver: req.sql_driver || 'sqlite',
+sqlTargetVar: req.sql_target_var || '',
+sqlTargetCol: req.sql_target_col || '',
+note: req.note || ''
+})
+            });
             if (resp.ok) { 
                 showToast("Request updated!", "success");
                 closeModal('edit-modal'); 
@@ -932,6 +1104,20 @@
             }
         }
         function showNewModalFromContext() { document.getElementById('new-path').value = menuTarget + " > "; showNewModal(); }
+
+        function exportPostman() {
+            if (!menuTarget) {
+                // If no target, export everything
+                window.location.href = '/api/export';
+                return;
+            }
+            // Check if menuTarget is a folder or request
+            const isFolder = !flatRequests.some(r => r.path === menuTarget);
+            const path = isFolder ? menuTarget : menuTarget.split(' > ').slice(0, -1).join(' > ');
+            
+            window.location.href = `/api/export?path=${encodeURIComponent(menuTarget)}`;
+            showToast("Exporting Postman collection...", "info");
+        }
 
         async function deleteCurrentItem() {
             if (!confirm(`Delete "${menuTarget}"?`)) return;
@@ -993,7 +1179,26 @@
         
         async function saveNewRequest() {
             const path = document.getElementById('new-path').value;
-            const resp = await fetch('/api/requests/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, method: document.getElementById('new-method').value, url: document.getElementById('new-url').value, bodyMode: 'raw', bodyRaw: '', urlencoded: [], headers: [], preRequestScript: '', testScript: '' }) });
+            const resp = await fetch('/api/requests/new', { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify({ 
+                    path, 
+                    method: document.getElementById('new-method').value, 
+                    url: document.getElementById('new-url').value, 
+                    bodyMode: 'raw', 
+                    bodyRaw: '', 
+                    urlencoded: [], 
+                    headers: [], 
+                    preRequestScript: '', 
+                    testScript: '',
+                    sqlQuery: '',
+                    dbPath: '',
+                    sqlDriver: 'sqlite',
+                    sqlTargetVar: '',
+                    sqlTargetCol: ''
+                }) 
+            });
             if (resp.ok) { 
                 showToast("Request created!", "success");
                 closeModal('new-modal'); 
@@ -1209,6 +1414,34 @@
                 input.focus();
                 renderSearchResults('');
             }
+            if (e.ctrlKey && e.key.toLowerCase() === 'l') {
+                e.preventDefault();
+                document.getElementById('response-body').textContent = '// Ready';
+                document.getElementById('resp-pane-headers').innerHTML = '';
+                document.getElementById('response-meta').textContent = '';
+                document.querySelectorAll('.request-item').forEach(el => el.classList.remove('active'));
+                lastFilteredResult = null;
+                showToast("View cleared", "info");
+                return;
+            }
+            if (e.altKey && e.shiftKey && (e.key === '+' || e.key === '=')) {
+                e.preventDefault();
+                expandAllJson();
+                return;
+            }
+            if (e.altKey && e.shiftKey && (e.key === '-' || e.key === '_')) {
+                e.preventDefault();
+                collapseAllJson();
+                return;
+            }
+            if (e.ctrlKey && e.key.toLowerCase() === 'f') {
+                const filter = document.getElementById('json-filter');
+                if (filter && document.activeElement !== filter) {
+                    e.preventDefault();
+                    filter.focus();
+                    filter.select();
+                }
+            }
             if (e.key === 'Escape') {
                 closeModal('search-modal');
                 closeModal('command-palette-modal');
@@ -1274,12 +1507,12 @@
             const filtered = flatRequests.filter(r => r.path.toLowerCase().includes(q));
             
             filtered.slice(0, 10).forEach(r => {
-                const div = document.createElement('div');
-                div.className = 'request-item';
-                div.innerHTML = `<span class="method-tag method-${r.request.method}">${r.request.method}</span><span>${r.path}</span>`;
-                div.onclick = () => {
-                    selectRequest(r.path);
-                    closeModal('search-modal');
+                const div = createRequestNode(r.path, r.request.method, r.path);
+                const originalClick = div.onclick;
+                div.onclick = (e) => { 
+                    if (e.target.closest('.zap-btn')) return;
+                    originalClick(e); 
+                    closeModal('search-modal'); 
                 };
                 results.appendChild(div);
             });
