@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	clog "github.com/charmbracelet/log"
 )
 
 // blockedHosts contains hostnames that should not be proxied (SSRF protection)
@@ -23,6 +26,19 @@ var blockedHosts = []string{
 	"169.254.169.254", // AWS metadata
 }
 
+// hopByHopHeaders are headers that must not be forwarded per RFC 7230 §6.1
+var hopByHopHeaders = map[string]bool{
+	"Connection":          true,
+	"Keep-Alive":          true,
+	"Proxy-Authenticate":  true,
+	"Proxy-Authorization": true,
+	"TE":                  true,
+	"Trailer":             true,
+	"Transfer-Encoding":   true,
+	"Upgrade":             true,
+	"Proxy-Connection":    true,
+}
+
 // isPrivateIP checks if an IP address is in a private range
 func isPrivateIP(host string) bool {
 	ip := net.ParseIP(host)
@@ -32,7 +48,8 @@ func isPrivateIP(host string) bool {
 	return ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast()
 }
 
-// isURLAllowed validates if a URL should be allowed (SSRF protection)
+// isURLAllowed validates if a URL should be allowed (SSRF protection).
+// It resolves DNS for domain names to verify the resolved IP is not private.
 func isURLAllowed(rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -40,22 +57,44 @@ func isURLAllowed(rawURL string) error {
 	}
 
 	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("URL has no host")
+	}
 
-	// Check blocked hosts
+	// Fast-path: check blocked hostnames
 	for _, blocked := range blockedHosts {
 		if strings.EqualFold(host, blocked) {
 			return fmt.Errorf("URL host '%s' is not allowed", host)
 		}
 	}
 
-	// Check for private IP ranges
-	if isPrivateIP(host) {
-		return fmt.Errorf("URL resolves to private IP '%s' which is not allowed", host)
-	}
-
 	// Only allow HTTP/HTTPS
 	if u.Scheme != "" && u.Scheme != "http" && u.Scheme != "https" {
 		return fmt.Errorf("URL scheme '%s' is not allowed", u.Scheme)
+	}
+
+	// Fast-path: if it's already an IP address, check directly
+	if ip := net.ParseIP(host); ip != nil {
+		if isPrivateIP(host) {
+			return fmt.Errorf("URL resolves to private IP '%s' which is not allowed", host)
+		}
+		return nil
+	}
+
+	// Resolve DNS with timeout to check all resolved IPs
+	var resolver net.Resolver
+	resolveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	ips, err := resolver.LookupHost(resolveCtx, host)
+	if err != nil {
+		return fmt.Errorf("DNS resolution failed for '%s': %v", host, err)
+	}
+
+	for _, ipStr := range ips {
+		if isPrivateIP(ipStr) {
+			return fmt.Errorf("URL resolves to private IP '%s' which is not allowed", ipStr)
+		}
 	}
 
 	return nil
@@ -115,8 +154,20 @@ func (p *ProxyServer) Start(port int) error {
 			}
 		}
 
+		// Collect extension hop-by-hop headers from the Connection header
+		extHopByHop := map[string]bool{}
+		if connHeader := r.Header.Get("Connection"); connHeader != "" {
+			for _, ext := range strings.Split(connHeader, ",") {
+				ext = strings.TrimSpace(ext)
+				if ext != "" {
+					extHopByHop[ext] = true
+				}
+			}
+		}
+
 		for k, vv := range r.Header {
-			if k == "Proxy-Connection" || k == "Connection" {
+			// Skip hop-by-hop headers (RFC 7230 §6.1)
+			if hopByHopHeaders[k] || extHopByHop[k] {
 				continue
 			}
 			capturedReq.Header = append(capturedReq.Header, models.Header{
@@ -125,8 +176,13 @@ func (p *ProxyServer) Start(port int) error {
 			})
 		}
 
-		// 3. Save to Storage
-		go func() {
+		// 3. Save to Storage (synchronous with panic recovery)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					clog.Error("panic saving intercepted request", "recover", r)
+				}
+			}()
 			path := fmt.Sprintf("Intercepted > %s > %s %s", 
 				time.Now().Format("2006-01-02"), 
 				r.Method, 
@@ -136,7 +192,9 @@ func (p *ProxyServer) Start(port int) error {
 				Path:    path,
 				Request: capturedReq,
 			}
-			p.Storage.SaveSingleRequest(reqInfo)
+			if err := p.Storage.SaveSingleRequest(reqInfo); err != nil {
+				clog.Error("failed to save intercepted request", "error", err)
+			}
 		}()
 
 		// 4. Forward the request to the real destination

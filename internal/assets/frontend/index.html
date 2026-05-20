@@ -7,9 +7,10 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>PostIt - Web Client</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script src="lucide.min.js"></script>
+    <script src="chart.min.js" onerror="console.warn('chart.min.js not found locally')"></script>
+    <script src="mermaid.min.js" onerror="console.warn('mermaid.min.js not found locally')"></script>
+    <script>if (typeof lucide === 'undefined') console.warn('lucide failed to load');</script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -257,6 +258,7 @@
                     <div class="tab" style="padding: 12px 0; font-size: 11px; font-weight: 700; text-transform: uppercase;" onclick="switchResponseTab('preview')">PREVIEW</div>
                     <div class="tab" style="padding: 12px 0; font-size: 11px; font-weight: 700; text-transform: uppercase;" onclick="switchResponseTab('jwt')">JWT</div>
                     <div class="tab" style="padding: 12px 0; font-size: 11px; font-weight: 700; text-transform: uppercase;" onclick="switchResponseTab('diff')">DIFF</div>
+                    <div class="tab" style="padding: 12px 0; font-size: 11px; font-weight: 700; text-transform: uppercase;" onclick="switchResponseTab('schema')">SCHEMA</div>
                     <div class="tab" style="padding: 12px 0; font-size: 11px; font-weight: 700; text-transform: uppercase;" onclick="switchResponseTab('security')">SECURITY</div>
                     </div>
 
@@ -267,6 +269,7 @@
                     <span>FILTER</span>
                     <input type="text" id="json-filter" placeholder="e.g. data.id (supports paths, predicates, projections, and pipes)" oninput="applyJsonFilter(this.value)">
                     <div class="response-actions">
+                        <button class="sidebar-action-btn" title="Save Response Schema" onclick="saveResponseSchema()"><i data-lucide="file-json"></i> Schema</button>
                         <button class="sidebar-action-btn" title="Expand All (Alt+Shift++)" onclick="expandAllJson()"><i data-lucide="maximize-2"></i></button>
                         <button class="sidebar-action-btn" title="Collapse All (Alt+Shift+-)" onclick="collapseAllJson()"><i data-lucide="minimize-2"></i></button>
                         <button class="sidebar-action-btn" title="Beautify JSON" onclick="beautifyResponseJson()"><i data-lucide="sparkles"></i></button>
@@ -290,6 +293,16 @@
             <div id="resp-pane-diff" class="pane" style="padding: 0; display: none; flex-direction: row;">
                 <div class="diff-pane"><div class="diff-header">BASELINE</div><pre id="diff-baseline" class="diff-content" style="color: #888;"></pre></div>
                 <div class="diff-pane"><div class="diff-header">CURRENT</div><pre id="diff-current" class="diff-content" style="color: #4ade80;"></pre></div>
+            </div>
+            <div id="resp-pane-schema" class="pane" style="padding: 16px; overflow: auto; flex-direction: column;">
+                <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+                    <div style="font-size: 12px; color: var(--text-secondary);">Response JSON Schema</div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="sidebar-action-btn" onclick="saveSchemaFromEditor()" title="Save Schema"><i data-lucide="save"></i> Save</button>
+                        <button class="sidebar-action-btn" onclick="formatSchemaEditor()" title="Format Schema"><i data-lucide="sparkles"></i> Format</button>
+                    </div>
+                </div>
+                <textarea id="schema-editor" spellcheck="false" style="flex: 1; width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-main); padding: 12px; border-radius: 4px; font-family: monospace; font-size: 12px; resize: none; outline: none; min-height: 200px;" placeholder="No schema saved yet. Send a request and click 'Save Schema' in the response toolbar to generate one."></textarea>
             </div>
             <div id="resp-pane-security" class="pane" style="padding: 24px; overflow: auto;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">

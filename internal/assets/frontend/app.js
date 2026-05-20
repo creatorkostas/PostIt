@@ -1,3 +1,104 @@
+        // ─── Runtime Detection & Backend Abstraction ──────────────────────────
+        // Auto-detect Wails vs web-browser environment.  In Wails mode the
+        // bound Go methods are called directly via window.go.main.App.*; in
+        // web mode the same operations go through fetch('/api/...').
+        const _isWails = typeof window !== 'undefined' && window.go && window.go.main && window.go.main.App && true;
+
+        /**
+         * callApi – unified backend call that works in both Wails and web mode.
+         *
+         * @param {string}  endpoint  – e.g. "/api/requests"
+         * @param {string}  [method]  – "GET" (default) or "POST"
+         * @param {object}  [body]    – JS object to send (ignored for GET)
+         * @returns {Promise<any>}    – parsed response (same shape in both modes)
+         */
+        async function callApi(endpoint, method, body) {
+            if (_isWails) {
+                return await wailsCall(endpoint, method || 'GET', body);
+            }
+            const opts = { method: method || 'GET', headers: { 'Content-Type': 'application/json' } };
+            if (body && method !== 'GET') opts.body = JSON.stringify(body);
+            const resp = await fetch(endpoint, opts);
+            if (!resp.ok) {
+                const errText = await resp.text().catch(() => resp.statusText);
+                throw new Error(errText || `HTTP ${resp.status}`);
+            }
+            const text = await resp.text();
+            return text ? JSON.parse(text) : null;
+        }
+
+        // Endpoint → Wails method-name mapping.  The key is "METHOD /path".
+        const _wailsRouting = {
+            'GET /api/requests':             'GetRequests',
+            'POST /api/requests/new':        'NewRequest',
+            'POST /api/requests/duplicate':  'DuplicateRequest',
+            'POST /api/requests/update':     'UpdateRequest',
+            'POST /api/requests/delete':     'DeleteRequest',
+            'POST /api/requests/reorder':    'ReorderRequests',
+            'GET /api/variables':            'GetVariables',
+            'POST /api/variables':           'SaveVariables',
+            'GET /api/history':              'GetHistory',
+            'POST /api/history/clear':       'ClearHistory',
+            'POST /api/history/delete':      null, // handled specially
+            'POST /api/send':                'SendRequest',
+            'POST /api/hammer':              'HammerRequest',
+            'POST /api/sql':                 'SQLRequest',
+            'POST /api/schema/save':         'SaveSchema',
+            'POST /api/mock/save':           'SaveMockResponse',
+            'POST /api/mock/delete':         'DeleteMock',
+            'GET /api/mock/stats':           'GetMockStats',
+            'POST /api/fuzz':                'FuzzRequest',
+            'POST /api/runner/run':          'RunRunner',
+            'POST /api/graphql/introspection':'GraphQLIntrospection',
+            'POST /api/import/curl':         'ImportCurl',
+            'POST /api/import/openapi':      'ImportOpenAPI',
+            'POST /api/import/postman':      'ImportPostman',
+            'GET /api/workflows':            'GetWorkflows',
+            'POST /api/workflows':           'SaveWorkflows',
+            'POST /api/workflows/run':       'RunWorkflow',
+            'GET /api/environments':         'GetEnvironments',
+            'POST /api/environments':        'SaveEnvironments',
+            'GET /api/environments/active':  'GetActiveEnv',
+            'POST /api/environments/active': 'SetActiveEnv',
+            'POST /api/vault/unlock':        'UnlockVault',
+            'POST /api/vault/encrypt':       'VaultEncrypt',
+            'GET /api/vault/status':         'GetVaultStatus',
+            'POST /api/ws/connect':          'WSConnect',
+            'POST /api/ws/send':             'WSSend',
+            'GET /api/ws/messages':          'WSGetMessages',
+            'POST /api/ws/close':            'WSClose',
+            'POST /api/proxy/start':         'StartProxy',
+            'POST /api/proxy/stop':          'StopProxy',
+            'GET /api/proxy/status':         'GetProxyStatus',
+            'GET /api/export':               'ExportPostman',
+            'POST /api/import/curl':         'ImportCurl',
+        };
+
+        /** Dispatch a call to the Wails runtime. */
+        async function wailsCall(endpoint, method, body) {
+            const key = method + ' ' + endpoint;
+            const fnName = _wailsRouting[key];
+
+            // Special cases that need custom argument shaping
+            if (key === 'POST /api/history/delete') {
+                // Web sends {timestamp: ts} but Wails expects raw ts value
+                return await window.go.main.App.DeleteHistory(body.timestamp);
+            }
+            if (key === 'GET /api/export') {
+                return await window.go.main.App.ExportPostman(window._exportPath || "");
+            }
+
+            if (!fnName) {
+                throw new Error(`[Wails] No mapping for ${key}`);
+            }
+            const fn = window.go.main.App[fnName];
+            if (!fn) {
+                throw new Error(`[Wails] Method "${fnName}" not found on App`);
+            }
+            if (body) return await fn(body);
+            return await fn();
+        }
+
         let flatRequests = [];
         let currentRequest = null;
         let responseCache = {}; 
@@ -202,8 +303,7 @@
 
         async function init() {
             try {
-                const resp = await fetch('/api/requests');
-                const data = await resp.json();
+                const data = await callApi('/api/requests');
                 flatRequests = data.flat;
                 const treeContainer = document.getElementById('collection-tree');
                 treeContainer.innerHTML = '';
@@ -281,8 +381,7 @@
         async function importOpenAPI() {
             const spec = document.getElementById('openapi-input').value;
             try {
-                const resp = await fetch('/api/import/openapi', { method: 'POST', body: JSON.stringify({ json: spec }) });
-                const data = await resp.json();
+                const data = await callApi('/api/import/openapi', 'POST', { json: spec });
                 showToast(`Imported ${data.count} requests!`, "success");
                 closeModal('import-modal');
                 init();
@@ -292,8 +391,7 @@
         async function importPostman() {
             const json = document.getElementById('postman-input').value;
             try {
-                const resp = await fetch('/api/import/postman', { method: 'POST', body: JSON.stringify({ json }) });
-                const data = await resp.json();
+                const data = await callApi('/api/import/postman', 'POST', { json });
                 showToast(`Imported ${data.count} requests!`, "success");
                 closeModal('import-modal');
                 init();
@@ -301,6 +399,18 @@
         }
 
         async function exportHAR() {
+            if (_isWails) {
+                // In Wails mode, fetch history data and trigger a save dialog
+                try {
+                    const history = await callApi('/api/history');
+                    const blob = new Blob([JSON.stringify(history, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = 'history.json'; a.click();
+                    URL.revokeObjectURL(url);
+                } catch (e) { showToast("Export failed: " + e.message, "error"); }
+                return;
+            }
             window.location.href = '/api/history/export';
         }
 
@@ -308,8 +418,7 @@
             const list = document.getElementById('mock-stats-list');
             list.innerHTML = 'Loading...';
             try {
-                const resp = await fetch('/api/mock/stats');
-                const stats = await resp.json();
+                const stats = await callApi('/api/mock/stats');
                 list.innerHTML = '';
                 Object.entries(stats).forEach(([key, stat]) => {
                     const div = document.createElement('div');
@@ -337,24 +446,21 @@
 
         async function connectWS() {
             const url = document.getElementById('ws-url').value;
-            const resp = await fetch('/api/ws/connect', { method: 'POST', body: JSON.stringify({ url }) });
-            if (resp.ok) {
+            try { await callApi('/api/ws/connect', 'POST', { url });
                 document.getElementById('ws-connect-btn').style.display = 'none';
                 document.getElementById('ws-disconnect-btn').style.display = 'inline-block';
                 showToast("WebSocket Connected", "success");
-            } else { showToast("Connection Failed", "error"); }
+            } catch (e) { showToast("Connection Failed: " + e.message, "error"); }
         }
 
         async function sendWS() {
             const msg = document.getElementById('ws-input').value;
-            const resp = await fetch('/api/ws/send', { method: 'POST', body: JSON.stringify({ message: msg }) });
-            if (resp.ok) { document.getElementById('ws-input').value = ''; updateWSLog(); }
+            try { await callApi('/api/ws/send', 'POST', { message: msg }); document.getElementById('ws-input').value = ''; updateWSLog(); } catch (e) { showToast("Send failed: " + e.message, "error"); }
         }
 
         async function updateWSLog() {
             if (activeSidebar !== 'ws') return;
-            const resp = await fetch('/api/ws/messages');
-            const msgs = await resp.json();
+            const msgs = await callApi('/api/ws/messages');
             const log = document.getElementById('ws-log');
             log.innerHTML = msgs.map(m => {
                 let color = m.type === 'sent' ? '#4ade80' : (m.type === 'received' ? '#60a5fa' : '#f87171');
@@ -364,7 +470,7 @@
         }
 
         async function closeWS() {
-            await fetch('/api/ws/close', { method: 'POST' });
+            try { await callApi('/api/ws/close', 'POST'); } catch (e) { /* ignore */ }
             document.getElementById('ws-connect-btn').style.display = 'inline-block';
             document.getElementById('ws-disconnect-btn').style.display = 'none';
         }
@@ -375,8 +481,7 @@
             const list = document.getElementById('history-list');
             list.innerHTML = '<div style="padding: 24px; color: var(--text-secondary); text-align: center;">Loading history...</div>';
             try {
-                const resp = await fetch('/api/history');
-                const history = await resp.json();
+                const history = await callApi('/api/history');
                 historyCache = history;
                 list.innerHTML = history.length === 0 ? '<div style="padding: 24px; color: var(--text-secondary); font-style: italic; text-align: center;">No history.</div>' : '';
                 history.slice().reverse().forEach((item, index) => {
@@ -443,19 +548,19 @@
         }
 
         async function deleteHistoryItem(ts) { 
-            const resp = await fetch('/api/history/delete', { method: 'POST', body: JSON.stringify({ timestamp: ts }) }); 
-            if (resp.ok) {
+            try {
+                await callApi('/api/history/delete', 'POST', { timestamp: ts });
                 showToast("History item deleted", "info");
                 renderHistory(); 
-            }
+            } catch (e) { showToast("Failed to delete: " + e.message, "error"); }
         }
         async function clearHistory() { 
             if (!confirm("Clear history?")) return; 
-            const resp = await fetch('/api/history/clear', { method: 'POST' }); 
-            if (resp.ok) {
+            try {
+                await callApi('/api/history/clear', 'POST');
                 showToast("History cleared", "success");
                 renderHistory(); 
-            }
+            } catch (e) { showToast("Failed to clear: " + e.message, "error"); }
         }
 
         async function renderWorkflows() {
@@ -463,8 +568,7 @@
             if (activeSidebar !== 'workflows') return;
             list.innerHTML = '<div style="padding: 16px;"><button class="btn-primary" style="width:100%" onclick="createNewWorkflow()"><i data-lucide="plus"></i> New Workflow</button></div>';
             try {
-                const resp = await fetch('/api/workflows');
-                workflows = await resp.json() || [];
+                workflows = await callApi('/api/workflows') || [];
                 workflows.forEach(w => {
                     const div = document.createElement('div');
                     div.className = 'folder';
@@ -709,7 +813,7 @@
         // Remove old simple click handler
         document.getElementById('workflow-svg').onclick = null;
 
-        async function saveWorkflows() { await fetch('/api/workflows', { method: 'POST', body: JSON.stringify(workflows) }); }
+        async function saveWorkflows() { try { await callApi('/api/workflows', 'POST', workflows); } catch (e) { showToast("Save failed: " + e.message, "error"); } }
         function saveWorkflow() { saveWorkflows(); showToast("Workflow saved!", "success"); }
 
         async function runWorkflow() {
@@ -717,8 +821,7 @@
             const logsCont = document.getElementById('workflow-logs-content');
             logsCont.innerHTML = '<div style="color:var(--accent)">Running workflow...</div>';
             try {
-                const resp = await fetch('/api/workflows/run', { method: 'POST', body: JSON.stringify(currentWorkflow) });
-                const logs = await resp.json();
+                const logs = await callApi('/api/workflows/run', 'POST', currentWorkflow);
                 logsCont.innerHTML = '';
                 logs.forEach(log => {
                     const div = document.createElement('div');
@@ -755,8 +858,7 @@
             });
 
             try {
-                const resp = await fetch('/api/hammer', { method: 'POST', body: JSON.stringify({ path: currentRequest.path, workers: parseInt(workers), duration: parseInt(duration) }) });
-                const data = await resp.json();
+                const data = await callApi('/api/hammer', 'POST', { path: currentRequest.path, workers: parseInt(workers), duration: parseInt(duration) });
                 
                 document.getElementById('h-total').textContent = data.TotalRequests;
                 document.getElementById('h-rps').textContent = data.RPS.toFixed(1);
@@ -781,9 +883,7 @@
             const resultsDiv = document.getElementById('sql-results');
             resultsDiv.textContent = "Executing...";
             try {
-                const resp = await fetch('/api/sql', { method: 'POST', body: JSON.stringify({ driver: driver, connStr: dbPath, query: query, targetVar, targetCol }) });
-                if (!resp.ok) throw new Error(await resp.text());
-                const data = await resp.json();
+                const data = await callApi('/api/sql', 'POST', { driver: driver, connStr: dbPath, query: query, targetVar, targetCol });
                 let html = '<table style="width:100%; border-collapse:collapse; font-size:12px;"><thead><tr style="border-bottom:1px solid var(--border-color);">';
                 data.columns.forEach(c => html += `<th style="padding:8px; text-align:left; color:var(--accent);">${c}</th>`);
                 html += '</tr></thead><tbody>';
@@ -904,48 +1004,30 @@ async function saveCurrentRequest() {
   if (!currentRequest) return;
   const urlencoded = Array.from(document.querySelectorAll('#req-urlencoded-list .header-row')).map(row => ({ key: row.querySelector('.urlencoded-key').value, value: row.querySelector('.urlencoded-value').value })).filter(u => u.key !== '');
   const headers = Array.from(document.querySelectorAll('#req-headers-list .header-row')).map(row => ({ key: row.querySelector('.header-key').value, value: row.querySelector('.header-value').value })).filter(h => h.key !== '');
+  const schema = currentRequest.schema || '';
   try {
-    const resp = await fetch('/api/requests/update', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        oldPath: currentRequest.path,
-        newPath: currentRequest.path,
-        method: document.getElementById('req-method-display').textContent,
-        url: document.getElementById('req-url-input').value,
-        bodyMode: document.querySelector('input[name="body-mode"]:checked').value,
-        bodyRaw: document.getElementById('req-body-input').value,
-        urlencoded,
-        headers,
-        preRequestScript: document.getElementById('req-prerequest-input').value,
-        testScript: document.getElementById('req-tests-input').value,
-        sqlQuery: document.getElementById('sql-query').value,
-        dbPath: document.getElementById('sql-db-path').value,
-        sqlDriver: document.getElementById('sql-driver').value,
-        sqlTargetVar: document.getElementById('sql-target-var').value,
-        sqlTargetCol: document.getElementById('sql-target-col').value,
-        note: document.getElementById('req-note-input').value
-      })
+    const data = await callApi('/api/requests/update', 'POST', {
+      oldPath: currentRequest.path,
+      newPath: currentRequest.path,
+      method: document.getElementById('req-method-display').textContent,
+      url: document.getElementById('req-url-input').value,
+      bodyMode: document.querySelector('input[name="body-mode"]:checked').value,
+      bodyRaw: document.getElementById('req-body-input').value,
+      urlencoded,
+      headers,
+      preRequestScript: document.getElementById('req-prerequest-input').value,
+      testScript: document.getElementById('req-tests-input').value,
+      sqlQuery: document.getElementById('sql-query').value,
+      dbPath: document.getElementById('sql-db-path').value,
+      sqlDriver: document.getElementById('sql-driver').value,
+      sqlTargetVar: document.getElementById('sql-target-var').value,
+      sqlTargetCol: document.getElementById('sql-target-col').value,
+      note: document.getElementById('req-note-input').value,
+      schema: schema
     });
-    if (resp.ok) {
-      const text = await resp.text();
-      if (!text) {
-        showToast("Save failed: Empty response from server", "error");
-        return;
-      }
-      try {
-        const data = JSON.parse(text);
-        const idx = flatRequests.findIndex(r => r.path === currentRequest.path);
-        if (idx !== -1) { flatRequests[idx] = data; currentRequest = data; }
-        showToast("Saved!", "success");
-      } catch (parseErr) {
-        showToast("Save failed: Invalid JSON response - " + parseErr.message, "error");
-        console.error("Invalid JSON response:", text);
-      }
-    } else {
-      const errText = await resp.text();
-      showToast("Save failed: " + errText, "error");
-    }
+    const idx = flatRequests.findIndex(r => r.path === currentRequest.path);
+    if (idx !== -1) { flatRequests[idx] = data; currentRequest = data; }
+    showToast("Saved!", "success");
   } catch (e) {
     showToast("Save failed: " + e.message, "error");
   }
@@ -968,8 +1050,8 @@ async function saveCurrentRequest() {
             }
 
             try {
-                const resp = await fetch('/api/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: currentRequest.path, bodyMode: mode, bodyRaw: bodyRaw, urlencoded: Array.from(document.querySelectorAll('#req-urlencoded-list .header-row')).map(row => ({ key: row.querySelector('.urlencoded-key').value, value: row.querySelector('.urlencoded-value').value })).filter(u => u.key !== '') }) });
-                const data = await resp.json(); const duration = Date.now() - start;
+                const data = await callApi('/api/send', 'POST', { path: currentRequest.path, bodyMode: mode, bodyRaw: bodyRaw, urlencoded: Array.from(document.querySelectorAll('#req-urlencoded-list .header-row')).map(row => ({ key: row.querySelector('.urlencoded-key').value, value: row.querySelector('.urlencoded-value').value })).filter(u => u.key !== '') });
+                const duration = Date.now() - start;
                 let color = (data.statusCode >= 400 || data.statusCode === 0) ? 'var(--method-delete)' : 'var(--method-get)';
                 let mHtmlText = `<span style="color:${color};font-weight:700">${data.statusCode} ${data.statusText}</span> &bull; ${duration}ms`;
                 let body = data.body || ''; const h = data.headers || {}; const ct = (h['Content-Type'] || h['content-type'] || [])[0] || '';
@@ -1010,6 +1092,7 @@ async function saveCurrentRequest() {
         function switchResponseTab(tab) {
             document.querySelectorAll('#response-header .tab').forEach(t => t.classList.toggle('active', t.textContent.toLowerCase() === tab.toLowerCase()));
             document.querySelectorAll('#response-container .pane').forEach(p => { if(p.id.startsWith('resp-pane-')) p.classList.toggle('active', p.id === `resp-pane-${tab.toLowerCase()}`); });
+            if (tab === 'schema') loadSchemaEditor();
         }
         function switchBodyMode(mode) { 
             document.getElementById('body-raw-container').style.display = mode === 'raw' ? 'block' : 'none'; 
@@ -1045,14 +1128,158 @@ async function saveCurrentRequest() {
             const code = match ? parseInt(match[1]) : 200; const status = match ? match[2].split('\n')[0].split(' •')[0] : "OK";
             const hRows = document.querySelectorAll('#resp-pane-headers div');
             const h = Array.from(hRows).map(r => { const t = r.innerText; const i = t.indexOf(':'); return { key: t.substring(0, i).trim(), value: t.substring(i+1).trim() }; });
-            const resp = await fetch('/api/mock/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: currentRequest.path, name, code, status, body: cached.body, headers: h, condition, delay }) });
-            if (resp.ok) { showToast("Mock saved!", "success"); await init(); selectRequest(currentRequest.path); }
+            try { await callApi('/api/mock/save', 'POST', { path: currentRequest.path, name, code, status, body: cached.body, headers: h, condition, delay }); showToast("Mock saved!", "success"); await init(); selectRequest(currentRequest.path); } catch (e) { showToast("Save failed: " + e.message, "error"); }
         }
 
         async function deleteMock(mockName) {
             if (!confirm(`Delete mock "${mockName}"?`)) return;
-            const resp = await fetch('/api/mock/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: currentRequest.path, mockName }) });
-            if (resp.ok) { showToast("Mock deleted!", "success"); await init(); selectRequest(currentRequest.path); }
+            try { await callApi('/api/mock/delete', 'POST', { path: currentRequest.path, mockName }); showToast("Mock deleted!", "success"); await init(); selectRequest(currentRequest.path); } catch (e) { showToast("Delete failed: " + e.message, "error"); }
+        }
+
+        // ─── Response Schema Feature ─────────────────────────────────────────────
+
+        async function saveResponseSchema() {
+            if (!currentRequest) return showToast("Select a request first", "error");
+            const cached = responseCache[currentRequest.path];
+            if (!cached || !cached.body) return showToast("Send a request first", "error");
+            
+            let bodyStr = cached.body;
+            if (typeof bodyStr !== 'string') {
+                try { bodyStr = JSON.stringify(bodyStr); } catch (e) { bodyStr = String(bodyStr); }
+            }
+            
+            try {
+                const parsed = JSON.parse(bodyStr);
+                const schema = generateSchemaFromJSON(parsed);
+                const schemaStr = JSON.stringify(schema, null, 4);
+                
+                await callApi('/api/schema/save', 'POST', { requestPath: currentRequest.path, schema: schemaStr });
+                showToast("Response schema saved!", "success");
+                
+                const idx = flatRequests.findIndex(r => r.path === currentRequest.path);
+                if (idx !== -1) flatRequests[idx].schema = schemaStr;
+                currentRequest.schema = schemaStr;
+            } catch (e) {
+                showToast("Failed to generate schema: " + e.message, "error");
+            }
+        }
+
+        function generateSchemaFromJSON(data) {
+            if (data === null) return { type: "null" };
+            const type = typeof data;
+            
+            if (type === "string") return { type: "string" };
+            if (type === "boolean") return { type: "boolean" };
+            if (type === "number") {
+                if (Number.isInteger(data)) return { type: "integer" };
+                return { type: "number" };
+            }
+            
+            if (Array.isArray(data)) {
+                const schema = { type: "array" };
+                if (data.length > 0) {
+                    schema.items = generateSchemaFromJSON(data[0]);
+                    if (data.length > 1) {
+                        const itemSchemas = data.slice(1).map(item => generateSchemaFromJSON(item));
+                        schema.items = mergeSchemas([schema.items, ...itemSchemas]);
+                    }
+                }
+                return schema;
+            }
+            
+            if (type === "object") {
+                const schema = { type: "object", properties: {}, required: [] };
+                for (const key of Object.keys(data)) {
+                    schema.properties[key] = generateSchemaFromJSON(data[key]);
+                    schema.required.push(key);
+                }
+                return schema;
+            }
+            
+            return { type: "string" };
+        }
+
+        function mergeSchemas(schemas) {
+            if (schemas.length === 0) return { type: "string" };
+            
+            const types = new Set(schemas.map(s => s.type));
+            if (types.size === 1) {
+                const base = JSON.parse(JSON.stringify(schemas[0]));
+                if (base.properties) {
+                    const allKeys = new Set();
+                    schemas.forEach(s => { if (s.properties) Object.keys(s.properties).forEach(k => allKeys.add(k)); });
+                    for (const key of allKeys) {
+                        const keySchemas = schemas.filter(s => s.properties && s.properties[key]).map(s => s.properties[key]);
+                        if (keySchemas.length > 0) {
+                            base.properties[key] = mergeSchemas(keySchemas);
+                        }
+                    }
+                }
+                return base;
+            }
+            
+            return { type: "string" };
+        }
+
+        function loadSchemaEditor() {
+            const editor = document.getElementById('schema-editor');
+            if (!editor) return;
+            
+            if (!currentRequest) {
+                editor.value = '// Select a request to view its response schema.';
+                return;
+            }
+            
+            const schema = currentRequest.schema || flatRequests.find(r => r.path === currentRequest.path)?.schema;
+            if (schema) {
+                try {
+                    const parsed = JSON.parse(schema);
+                    editor.value = JSON.stringify(parsed, null, 4);
+                } catch (e) {
+                    editor.value = schema;
+                }
+            } else {
+                editor.value = '// No schema saved. Send a request and click "Save Schema" in the response toolbar to generate one.';
+            }
+        }
+
+        async function saveSchemaFromEditor() {
+            if (!currentRequest) return showToast("Select a request first", "error");
+            const editor = document.getElementById('schema-editor');
+            if (!editor) return;
+            
+            const schemaStr = editor.value.trim();
+            if (!schemaStr || schemaStr.startsWith('//')) {
+                return showToast("No schema to save", "error");
+            }
+            
+            try {
+                JSON.parse(schemaStr);
+            } catch (e) {
+                return showToast("Invalid JSON: " + e.message, "error");
+            }
+            
+            try {
+                await callApi('/api/schema/save', 'POST', { requestPath: currentRequest.path, schema: schemaStr });
+                showToast("Schema saved!", "success");
+                
+                const idx = flatRequests.findIndex(r => r.path === currentRequest.path);
+                if (idx !== -1) flatRequests[idx].schema = schemaStr;
+                currentRequest.schema = schemaStr;
+            } catch (e) {
+                showToast("Failed to save schema: " + e.message, "error");
+            }
+        }
+
+        function formatSchemaEditor() {
+            const editor = document.getElementById('schema-editor');
+            if (!editor) return;
+            try {
+                const parsed = JSON.parse(editor.value);
+                editor.value = JSON.stringify(parsed, null, 4);
+            } catch (e) {
+                showToast("Invalid JSON", "error");
+            }
         }
 
         function showDuplicateModal() { document.getElementById('duplicate-path').value = menuTarget + " Copy"; document.getElementById('duplicate-modal').classList.add('show'); }
@@ -1061,10 +1288,7 @@ async function saveCurrentRequest() {
         async function saveEditRequest() {
             const newPath = document.getElementById('edit-path').value; const req = flatRequests.find(r => r.path === menuTarget);
             const pre = (req.events || []).find(e => e.listen === 'prerequest'); const test = (req.events || []).find(e => e.listen === 'test');
-            const resp = await fetch('/api/requests/update', { 
-                method: 'POST', 
-                headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify({ 
+            try { await callApi('/api/requests/update', 'POST', { 
                     oldPath: menuTarget, 
                     newPath: newPath, 
                     method: document.getElementById('edit-method').value, 
@@ -1080,54 +1304,57 @@ dbPath: req.db_path || '',
 sqlDriver: req.sql_driver || 'sqlite',
 sqlTargetVar: req.sql_target_var || '',
 sqlTargetCol: req.sql_target_col || '',
-note: req.note || ''
-})
-            });
-            if (resp.ok) { 
+note: req.note || '',
+schema: req.schema || ''
+}); 
                 showToast("Request updated!", "success");
                 closeModal('edit-modal'); 
                 await init(); 
                 selectRequest(newPath); 
-            } else {
-                showToast("Failed to update request", "error");
+            } catch (e) {
+                showToast("Failed to update request: " + e.message, "error");
             }
         }
 
         async function saveDuplicateRequest() { 
-            const resp = await fetch('/api/requests/duplicate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: menuTarget, newPath: document.getElementById('duplicate-path').value }) }); 
-            if (resp.ok) { 
+            try { await callApi('/api/requests/duplicate', 'POST', { path: menuTarget, newPath: document.getElementById('duplicate-path').value }); 
                 showToast("Request duplicated!", "success");
                 closeModal('duplicate-modal'); 
                 init(); 
-            } else {
-                showToast("Failed to duplicate request", "error");
+            } catch (e) {
+                showToast("Failed to duplicate request: " + e.message, "error");
             }
         }
         function showNewModalFromContext() { document.getElementById('new-path').value = menuTarget + " > "; showNewModal(); }
 
         function exportPostman() {
+            if (_isWails) {
+                // Wails mode: call ExportPostman which opens a native file dialog
+                const path = menuTarget || "";
+                window.go.main.App.ExportPostman(path).then(() => {
+                    showToast("Collection exported!", "success");
+                }).catch(e => {
+                    showToast("Export failed: " + e.message, "error");
+                });
+                return;
+            }
+            // Web mode: trigger download via browser
             if (!menuTarget) {
-                // If no target, export everything
                 window.location.href = '/api/export';
                 return;
             }
-            // Check if menuTarget is a folder or request
-            const isFolder = !flatRequests.some(r => r.path === menuTarget);
-            const path = isFolder ? menuTarget : menuTarget.split(' > ').slice(0, -1).join(' > ');
-            
             window.location.href = `/api/export?path=${encodeURIComponent(menuTarget)}`;
             showToast("Exporting Postman collection...", "info");
         }
 
         async function deleteCurrentItem() {
             if (!confirm(`Delete "${menuTarget}"?`)) return;
-            const resp = await fetch('/api/requests/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: menuTarget }) });
-            if (resp.ok) { 
+            try { await callApi('/api/requests/delete', 'POST', { path: menuTarget });
                 showToast("Item deleted", "success");
                 await init(); 
                 if (currentRequest && currentRequest.path === menuTarget) currentRequest = null; 
-            } else {
-                showToast("Failed to delete item", "error");
+            } catch (e) {
+                showToast("Failed to delete item: " + e.message, "error");
             }
         }
 
@@ -1135,12 +1362,11 @@ note: req.note || ''
             const idx = flatRequests.findIndex(r => r.path === menuTarget); if (idx === -1) return;
             let tIdx = dir === 'up' ? idx - 1 : idx + 1;
             if (tIdx < 0 || tIdx >= flatRequests.length) return;
-            const resp = await fetch('/api/requests/reorder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path1: menuTarget, path2: flatRequests[tIdx].path }) });
-            if (resp.ok) { await init(); selectRequest(menuTarget); }
+            try { await callApi('/api/requests/reorder', 'POST', { path1: menuTarget, path2: flatRequests[tIdx].path }); await init(); selectRequest(menuTarget); } catch (e) { showToast("Reorder failed: " + e.message, "error"); }
         }
 
         async function showVariablesModal() {
-            const resp = await fetch('/api/variables'); const vars = await resp.json();
+            const vars = await callApi('/api/variables');
             const list = document.getElementById('variables-list'); list.innerHTML = '';
             Object.entries(vars).forEach(([k,v]) => {
                 const div = document.createElement('div'); div.className = 'header-row';
@@ -1159,13 +1385,14 @@ note: req.note || ''
         async function saveVariables() {
             const vars = {};
             document.querySelectorAll('#variables-list .header-row').forEach(row => { const k = row.querySelector('.var-key').value; if(k) vars[k] = row.querySelector('.var-value').value; });
-            const resp = await fetch('/api/variables', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(vars) });
-            if (resp.ok) {
+            try {
+                await callApi('/api/variables', 'POST', vars);
                 showToast("Variables saved!", "success");
                 closeModal('variables-modal');
-            } else {
-                showToast("Failed to save variables", "error");
+            } catch (e) {
+                showToast("Failed to save variables: " + e.message, "error");
             }
+        }
         }
 
         function showContextMenu(x, y, path) {
@@ -1179,10 +1406,7 @@ note: req.note || ''
         
         async function saveNewRequest() {
             const path = document.getElementById('new-path').value;
-            const resp = await fetch('/api/requests/new', { 
-                method: 'POST', 
-                headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify({ 
+            try { await callApi('/api/requests/new', 'POST', { 
                     path, 
                     method: document.getElementById('new-method').value, 
                     url: document.getElementById('new-url').value, 
@@ -1196,27 +1420,24 @@ note: req.note || ''
                     dbPath: '',
                     sqlDriver: 'sqlite',
                     sqlTargetVar: '',
-                    sqlTargetCol: ''
-                }) 
-            });
-            if (resp.ok) { 
+                    sqlTargetCol: '',
+                    schema: ''
+                });
                 showToast("Request created!", "success");
                 closeModal('new-modal'); 
                 init(); 
-            } else {
-                showToast("Failed to create request", "error");
+            } catch (e) {
+                showToast("Failed to create request: " + e.message, "error");
             }
         }
 
         async function fetchActiveEnv() {
-            const r = await fetch('/api/environments/active');
-            const data = await r.json();
-            document.getElementById('env-active-select').value = data.id || '';
+            const data = await callApi('/api/environments/active');
+            document.getElementById('env-active-select').value = data.activeEnvId || data.id || '';
         }
 
         async function fetchEnvironments() {
-            const r = await fetch('/api/environments');
-            const envs = await r.json() || [];
+            const envs = await callApi('/api/environments') || [];
             renderActiveEnvSelect(envs);
             return envs;
         }
@@ -1234,20 +1455,18 @@ note: req.note || ''
         }
 
         async function switchActiveEnv(id) {
-            await fetch('/api/environments/active', { method: 'POST', body: JSON.stringify({ id }) });
+            try { await callApi('/api/environments/active', 'POST', { id }); } catch (e) { showToast("Switch failed: " + e.message, "error"); }
             showToast("Environment switched", "info");
         }
 
         async function unlockVault() {
             const password = document.getElementById('vault-password').value;
-            const resp = await fetch('/api/vault/unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-            if (resp.ok) { closeModal('vault-modal'); showToast("Vault Unlocked!", "success"); showEnvironmentsModal(); }
-            else { showToast("Invalid Password", "error"); }
+            try { await callApi('/api/vault/unlock', 'POST', { password }); closeModal('vault-modal'); showToast("Vault Unlocked!", "success"); showEnvironmentsModal(); }
+            catch (e) { showToast("Invalid Password: " + e.message, "error"); }
         }
 
         async function getVaultStatus() {
-            const r = await fetch('/api/vault/status');
-            const data = await r.json();
+            const data = await callApi('/api/vault/status');
             return data.unlocked;
         }
 
@@ -1349,9 +1568,8 @@ note: req.note || ''
                         }
                         
                         if (v !== '••••••••') {
-                            const resp = await fetch('/api/vault/encrypt', { method: 'POST', body: JSON.stringify({ plaintext: v }) });
-                            const data = await resp.json();
-                            env.secret_vars[k] = data.ciphertext;
+                            const data = await callApi('/api/vault/encrypt', 'POST', { plaintext: v });
+                            env.secret_vars[k] = data.ciphertext || data.encrypted;
                         }
                     } else {
                         env.variables[k] = v;
@@ -1360,8 +1578,7 @@ note: req.note || ''
                 envs.push(env);
             }
             
-            const resp = await fetch('/api/environments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(envs) });
-            if (resp.ok) { showToast("All environments saved!", "success"); }
+            try { await callApi('/api/environments', 'POST', envs); showToast("All environments saved!", "success"); } catch (e) { showToast("Save failed: " + e.message, "error"); }
         }
 
         document.addEventListener('keydown', (e) => {
@@ -1762,8 +1979,7 @@ note: req.note || ''
         function showImportModal() { document.getElementById('import-modal').classList.add('show'); }
         async function importCurl() {
             const curl = document.getElementById('curl-input').value;
-            const resp = await fetch('/api/import/curl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ curl }) });
-            if (resp.ok) { closeModal('import-modal'); await init(); showToast("Imported!", "success"); }
+            try { await callApi('/api/import/curl', 'POST', { curl }); closeModal('import-modal'); await init(); showToast("Imported!", "success"); } catch (e) { showToast("Import failed: " + e.message, "error"); }
         }
 
         let proxyInterval = null;
@@ -1775,24 +1991,20 @@ note: req.note || ''
             if (!isRunning) {
                 const port = prompt("Enter Proxy Port:", "8081");
                 if (!port) return;
-                const resp = await fetch('/api/proxy/start', { method: 'POST', body: JSON.stringify({ port: parseInt(port) }) });
-                if (resp.ok) {
+                try { await callApi('/api/proxy/start', 'POST', { port: parseInt(port) });
                     btn.innerHTML = '<i data-lucide="radio"></i> Stop Proxy';
                     btn.style.color = 'var(--method-delete)';
                     proxyInterval = setInterval(init, 5000);
                     showToast(`Proxy started on port ${port}.`, "success");
                     lucide.createIcons();
-                } else {
-                    showToast("Failed to start proxy", "error");
-                }
+                } catch (e) { showToast("Failed to start proxy: " + e.message, "error"); }
             } else {
-                const resp = await fetch('/api/proxy/stop', { method: 'POST' });
-                if (resp.ok) {
+                try { await callApi('/api/proxy/stop', 'POST');
                     btn.innerHTML = '<i data-lucide="radio"></i> Start Proxy';
                     btn.style.color = 'var(--text-secondary)';
                     if (proxyInterval) clearInterval(proxyInterval);
                     lucide.createIcons();
-                }
+                } catch (e) { showToast("Failed to stop proxy: " + e.message, "error"); }
             }
         }
 
@@ -1802,8 +2014,7 @@ note: req.note || ''
             tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--accent);">Scanning injection points...</td></tr>';
             
             try {
-                const resp = await fetch('/api/fuzz', { method: 'POST', body: JSON.stringify({ path: currentRequest.path }) });
-                const results = await resp.json();
+                const results = await callApi('/api/fuzz', 'POST', { path: currentRequest.path });
                 tbody.innerHTML = '';
                 results.forEach(res => {
                     const tr = document.createElement('tr');
@@ -1846,8 +2057,7 @@ note: req.note || ''
         }
 
         async function visualizeHistory() {
-            const resp = await fetch('/api/history');
-            const history = await resp.json();
+            const history = await callApi('/api/history');
             if (history.length === 0) return showToast("History is empty", "error");
             
             let mermaidCode = "sequenceDiagram\n    autonumber\n    participant User\n    participant PostIt\n    participant API\n";
@@ -1906,8 +2116,7 @@ note: req.note || ''
             tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:20px; color:var(--accent);">Running iterations...</td></tr>';
 
             try {
-                const resp = await fetch('/api/runner/run', { method: 'POST', body: JSON.stringify({ path: currentRequest.path, data: data }) });
-                const results = await resp.json();
+                const results = await callApi('/api/runner/run', 'POST', { path: currentRequest.path, data: data });
                 tbody.innerHTML = '';
                 results.forEach(res => {
                     const tr = document.createElement('tr');
@@ -1943,8 +2152,7 @@ note: req.note || ''
             browser.innerHTML = '<div style="color:var(--accent)">Introspecting...</div>';
             
             try {
-                const resp = await fetch('/api/graphql/introspection', { method: 'POST', body: JSON.stringify({ url }) });
-                const data = await resp.json();
+                const data = await callApi('/api/graphql/introspection', 'POST', { url });
                 renderGraphQLSchema(data.data.__schema);
                 showToast("Schema loaded!", "success");
             } catch (e) { 
@@ -1971,8 +2179,7 @@ note: req.note || ''
         }
 
         async function updateProxyStatus() {
-            const r = await fetch('/api/proxy/status');
-            const data = await r.json();
+            const data = await callApi('/api/proxy/status');
             const btn = document.getElementById('proxy-btn');
             if (data.running) {
                 btn.innerHTML = '<i data-lucide="radio"></i> Stop Proxy';

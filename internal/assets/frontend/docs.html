@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PostIt - Documentation</title>
+    <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">&larr; Back to App</a>
+        <header>
+            <h1>PostIt Documentation</h1>
+            <p style="color: var(--text-secondary);">Your local-first, Git-friendly API client &amp; test automation tool.</p>
+        </header>
+
+        <!-- ========= TABLE OF CONTENTS ========= -->
+        <nav id="toc">
+            <h2>Table of Contents</h2>
+            <ul>
+                <li><a href="#overview">1. Overview &amp; Getting Started</a></li>
+                <li><a href="#navigation">2. Navigation &amp; Ecosystem</a></li>
+                <li><a href="#request-editor">3. Request Editor</a></li>
+                <li><a href="#response">4. Response &amp; Validation</a></li>
+                <li><a href="#history">5. History &amp; Time Travel</a></li>
+                <li><a href="#import-export">6. Import &amp; Export</a></li>
+                <li><a href="#environments-vault">7. Environments &amp; Vault</a></li>
+                <li><a href="#workflows">8. Visual Workflows</a></li>
+                <li><a href="#power-tools">9. Power Tools</a>
+                    <ul>
+                        <li><a href="#hammer">9.1 Hammer (Load Testing)</a></li>
+                        <li><a href="#sql">9.2 SQL Sidekick</a></li>
+                        <li><a href="#websocket">9.3 WebSocket Client</a></li>
+                        <li><a href="#proxy">9.4 Proxy Mode (The Observer)</a></li>
+                        <li><a href="#mocks">9.5 Intelligent Mock Server</a></li>
+                        <li><a href="#fuzzer">9.6 Security Fuzzer</a></li>
+                        <li><a href="#runner">9.7 Data-Driven Runner</a></li>
+                        <li><a href="#graphql">9.8 GraphQL Explorer</a></li>
+                        <li><a href="#schema">9.9 Schema Generation &amp; Validation</a></li>
+                        <li><a href="#docs-gen">9.10 API Documentation Generator</a></li>
+                        <li><a href="#snippets">9.11 Code Snippets</a></li>
+                        <li><a href="#architecture">9.12 Architecture Visualizer</a></li>
+                    </ul>
+                </li>
+                <li><a href="#cli">10. CLI Runner (CI/CD)</a></li>
+                <li><a href="#tui">11. Terminal UI (TUI)</a></li>
+                <li><a href="#keyboard">12. Keyboard Shortcuts</a></li>
+            </ul>
+        </nav>
+
+        <!-- ========= 1. OVERVIEW ========= -->
+        <section id="overview">
+            <h2>1. Overview &amp; Getting Started</h2>
+            <div class="feature-card">
+                <h3>What is PostIt?</h3>
+                <p>PostIt is a <strong>local-first, Git-friendly</strong> API client and test automation tool. It stores all your requests, environments, and history as plain JSON files on disk, making them naturally version-controllable with Git. No cloud dependency, no vendor lock-in.</p>
+
+                <h3>Starting the Application</h3>
+                <p>Launch the Web UI with:</p>
+                <pre class="code-block">./postit.exe -ui web -port 8080</pre>
+                <p>Additional flags:</p>
+                <ul>
+                    <li><code>-ui web|tui|cli</code> &mdash; Choose interface (default: <code>web</code>)</li>
+                    <li><code>-port 8080</code> &mdash; Port for the Web UI</li>
+                    <li><code>-mock</code> &mdash; Enable the mock server at <code>/mock/</code></li>
+                    <li><code>-import path1,path2</code> &mdash; Import Postman collections on startup</li>
+                </ul>
+                <p>Once started, open <a href="http://localhost:8080" target="_blank">http://localhost:8080</a> in your browser.</p>
+
+                <h3>Data Storage</h3>
+                <p>All data is stored under the <code>output/</code> directory:</p>
+                <ul>
+                    <li><code>output/requests/</code> &mdash; Individual request JSON files</li>
+                    <li><code>output/collection.json</code> &mdash; Reconstructed Postman-compatible collection</li>
+                    <li><code>output/variables.json</code> &mdash; Global variables</li>
+                    <li><code>output/history.json</code> &mdash; Request history</li>
+                    <li><code>output/environments.json</code> &mdash; Environment definitions</li>
+                    <li><code>output/workflows.json</code> &mdash; Visual workflows</li>
+                    <li><code>output/global_headers.json</code> &mdash; Global request headers</li>
+                    <li><code>output/active_env.json</code> &mdash; Active environment ID</li>
+                </ul>
+                <p>Because everything is plain JSON, you can commit your <code>output/</code> directory to Git and share your entire workspace with your team.</p>
+            </div>
+        </section>
+
+        <!-- ========= 2. NAVIGATION ========= -->
+        <section id="navigation">
+            <h2>2. Navigation &amp; Ecosystem</h2>
+            <div class="feature-card">
+                <h3>Global Search (Ctrl+P)</h3>
+                <p>Press <code>Ctrl+P</code> anywhere in the app to open the Quick Jump menu. Type a path or method (e.g., <code>GET</code>, <code>/users</code>) to instantly navigate to any request across your entire workspace.</p>
+
+                <h3>Command Palette (Ctrl+Shift+P)</h3>
+                <p>Press <code>Ctrl+Shift+P</code> to open the Command Palette. Rapidly access all app functions:</p>
+                <ul>
+                    <li><strong>Beautify JSON</strong> &mdash; Format the request body</li>
+                    <li><strong>Toggle Environment</strong> &mdash; Switch environments</li>
+                    <li><strong>Toggle Proxy</strong> &mdash; Start/stop the HTTP proxy</li>
+                    <li><strong>Import cURL</strong> &mdash; Open the import dialog</li>
+                    <li><strong>Export Collection</strong> &mdash; Download the collection</li>
+                </ul>
+
+                <h3>Sidebar Tabs</h3>
+                <p>The left sidebar organizes your workspace into tabs:</p>
+                <ul>
+                    <li><strong>COLLECTIONS</strong> &mdash; Your request tree with folder structure</li>
+                    <li><strong>HISTORY</strong> &mdash; Past request snapshots with response data</li>
+                    <li><strong>WORKFLOWS</strong> &mdash; Visual multi-step workflow canvas</li>
+                    <li><strong>WS</strong> &mdash; WebSocket client</li>
+                    <li><strong>MOCK</strong> &mdash; Mock server statistics dashboard</li>
+                </ul>
+
+                <h3>Sidebar Toolbar</h3>
+                <p>Above the sidebar tabs, quick-action buttons provide access to:</p>
+                <ul>
+                    <li><span class="btn-ref">Book Open icon</span> &mdash; Open this documentation page</li>
+                    <li><span class="btn-ref">External Link icon</span> &mdash; Generate &amp; download API docs</li>
+                    <li><span class="btn-ref">Database icon</span> &mdash; View/edit global variables</li>
+                    <li><span class="btn-ref">Download icon</span> &mdash; Import cURL command</li>
+                    <li><span class="btn-ref">Plus icon</span> &mdash; Create a new request</li>
+                </ul>
+
+                <h3>Context Menu (Right-Click)</h3>
+                <p>Right-click any request in the sidebar to access:</p>
+                <ul>
+                    <li>Move Up / Move Down &mdash; Reorder requests</li>
+                    <li>New Request &mdash; Create a sibling request</li>
+                    <li>Rename / Move &mdash; Change the path of a request</li>
+                    <li>Duplicate &mdash; Clone a request</li>
+                    <li>Export Postman Collection &mdash; Download selected folder</li>
+                    <li>Delete &mdash; Remove the request</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- ========= 3. REQUEST EDITOR ========= -->
+        <section id="request-editor">
+            <h2>3. Request Editor</h2>
+            <div class="feature-card">
+                <h3>URL Bar</h3>
+                <p>The top URL bar lets you select an HTTP method (GET, POST, PUT, DELETE, PATCH) and enter the request URL. Click <strong>Send</strong> to execute the request.</p>
+
+                <h3>Magic Variables <span class="tag tag-pro">Dynamic</span></h3>
+                <p>Instantly generate dynamic data in URLs, Headers, or Body using double curly braces:</p>
+                <ul>
+                    <li><code>{{$guid}}</code> &mdash; Generates a UUID v4</li>
+                    <li><code>{{$timestamp}}</code> &mdash; Current Unix timestamp</li>
+                    <li><code>{{$isoTimestamp}}</code> &mdash; Current ISO-8601 time</li>
+                    <li><code>{{$randomInt}}</code> &mdash; Random integer (0-1000)</li>
+                    <li><code>{{$randomPassword}}</code> &mdash; Generates a secure 12-character string</li>
+                    <li><code>{{variable_name}}</code> &mdash; References a global or environment variable</li>
+                </ul>
+
+                <h3>Body Modes</h3>
+                <ul>
+                    <li><strong>raw</strong> &mdash; JSON or plain text body with syntax highlighting. Click <strong>Beautify JSON</strong> to format.</li>
+                    <li><strong>x-www-form-urlencoded</strong> &mdash; Key-value pairs for form submissions</li>
+                    <li><strong>GraphQL</strong> &mdash; Dedicated editor with separate query and variables panels</li>
+                </ul>
+
+                <h3>Headers Tab</h3>
+                <p>Add, edit, or remove request headers. Supports variable resolution (e.g., <code>{{auth_token}}</code>). Global headers are automatically merged with per-request headers.</p>
+
+                <h3>Pre-request Scripts</h3>
+                <p>Write JavaScript to execute <em>before</em> the request is sent. Supports:</p>
+                <ul>
+                    <li><code>pm.collectionVariables.set("key", value)</code></li>
+                    <li><code>pm.environment.set("key", value)</code></li>
+                    <li><code>pm.globals.set("key", value)</code></li>
+                    <li>Variable access via <code>{{variable}}</code> in the script</li>
+                </ul>
+
+                <h3>Post-request Scripts (Tests)</h3>
+                <p>Write JavaScript to execute <em>after</em> the response is received. Supports:</p>
+                <ul>
+                    <li><code>pm.response.json().path.to.field</code> &mdash; GJSON data extraction</li>
+                    <li><code>pm.response.headers.get("Header-Name")</code></li>
+                    <li><code>pm.request.headers.get("Header-Name")</code></li>
+                    <li>Conditional logic with <code>if</code> statements</li>
+                </ul>
+
+                <h3>Note Tab</h3>
+                <p>Add free-form notes or documentation to any request. Notes are persisted and exported with the collection.</p>
+            </div>
+        </section>
+
+        <!-- ========= 4. RESPONSE ========= -->
+        <section id="response">
+            <h2>4. Response &amp; Validation</h2>
+            <div class="feature-card">
+                <h3>JSON Transformation Engine</h3>
+                <p>PostIt features a powerful query engine in the response <strong>FILTER</strong> bar. You can drill down, search, filter, and transform JSON data on the fly.</p>
+
+                <h4>Multi-Filtering &amp; Exclusions</h4>
+                <p>Combine multiple filters and exclusions in a single line, separated by spaces:</p>
+                <ul>
+                    <li><strong>Multiple Exclusions:</strong> <code>-**.literals -**.assets -metadata</code></li>
+                    <li><strong>Combined Query:</strong> <code>-**.debugInfo data.users[active=true]</code></li>
+                </ul>
+
+                <h4>Filtering &amp; Searching</h4>
+                <ul>
+                    <li><strong>Drill Down:</strong> Standard dot notation. <code>data.user.profile</code></li>
+                    <li><strong>Exclude:</strong> Hide specific keys using the minus prefix. <code>-data.logs</code> or <code>-**.password</code></li>
+                    <li><strong>Deep Search:</strong> Find a key anywhere. <code>**.id</code></li>
+                    <li><strong>Predicates:</strong> Filter arrays by property values. <code>data.users[id=5]</code> or <code>products[price&gt;100]</code></li>
+                </ul>
+
+                <h4>Projections &amp; Formatting</h4>
+                <ul>
+                    <li><strong>Field Projection:</strong> <code>data.users{id, username, email}</code></li>
+                    <li><strong>Flatten View:</strong> <code>data | flatten</code></li>
+                </ul>
+
+                <h4>Transformation Pipes</h4>
+                <p>Chain transformations using the pipe (<code>|</code>) character:</p>
+                <ul>
+                    <li><code>| count</code> &mdash; Count items in an array or keys in an object</li>
+                    <li><code>| first</code> / <code>| last</code> &mdash; First/last item of an array</li>
+                    <li><code>| sort:key</code> &mdash; Sort array of objects by key</li>
+                    <li><code>| keys</code> &mdash; List all top-level keys</li>
+                </ul>
+
+                <h4>Example Advanced Queries</h4>
+                <ul>
+                    <li><code>-**.metadata data.items | count</code></li>
+                    <li><code>**.emails | first</code></li>
+                    <li><code>data.users[role=admin]{id, name} | sort:name</code></li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>Response Tabs</h3>
+                <ul>
+                    <li><strong>BODY</strong> &mdash; Formatted response body with collapsible JSON tree, copy, expand/collapse, and beautify buttons</li>
+                    <li><strong>HEADERS</strong> &mdash; Response headers displayed as key-value pairs</li>
+                    <li><strong>PREVIEW</strong> &mdash; Renders HTML responses in an iframe or displays images</li>
+                    <li><strong>JWT</strong> &mdash; Automatically detects, extracts, and decodes any JSON Web Tokens found in the response body or headers</li>
+                    <li><strong>DIFF</strong> &mdash; Compare the current response side-by-side with a pinned Baseline response</li>
+                    <li><strong>SECURITY</strong> &mdash; Run the Security Fuzzer against the current request</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- ========= 5. HISTORY ========= -->
+        <section id="history">
+            <h2>5. History &amp; Time Travel</h2>
+            <div class="feature-card">
+                <h3>Persistent Snapshots</h3>
+                <p>Every request sent via the Web UI, TUI, or CLI is automatically recorded in the <strong>HISTORY</strong> tab with its full context.</p>
+                <ul>
+                    <li><strong>Full Response Saving:</strong> Unlike traditional clients, PostIt saves the <strong>exact response body and headers</strong> for every historical call.</li>
+                    <li><strong>Time Travel:</strong> Click any item in the History sidebar to instantly restore that specific response snapshot, even if the server's data has changed since.</li>
+                    <li><strong>Metadata:</strong> Each record includes the precise timestamp, method, resolved URL, status code, and millisecond duration.</li>
+                </ul>
+
+                <h3>History Actions</h3>
+                <ul>
+                    <li><strong>Visualize Flow</strong> &mdash; Generate a Mermaid.js sequence diagram from your history items</li>
+                    <li><strong>Export HAR</strong> &mdash; Download history as an HTTP Archive (HAR) file</li>
+                    <li><strong>Clear</strong> &mdash; Clear all history records</li>
+                </ul>
+
+                <h3>Export Formats</h3>
+                <ul>
+                    <li><strong>JSON</strong> &mdash; <code>/api/history/export?format=json</code></li>
+                    <li><strong>CSV</strong> &mdash; <code>/api/history/export?format=csv</code></li>
+                    <li><strong>HAR</strong> &mdash; HTTP Archive format, accessible from the History tab</li>
+                </ul>
+
+                <h3>History Limits</h3>
+                <p>PostIt keeps the last <strong>50 history records</strong>. Older records are automatically pruned.</p>
+            </div>
+        </section>
+
+        <!-- ========= 6. IMPORT / EXPORT ========= -->
+        <section id="import-export">
+            <h2>6. Import &amp; Export</h2>
+            <div class="feature-card">
+                <h3>Import</h3>
+                <p>Click the <strong>Import</strong> button (download icon in the sidebar toolbar) to open the import dialog with three tabs:</p>
+                <ul>
+                    <li><strong>cURL</strong> &mdash; Paste a <code>cURL</code> command to instantly generate a fully populated request</li>
+                    <li><strong>OpenAPI / Swagger</strong> &mdash; Upload or paste an OpenAPI 3.0+ JSON spec to import all endpoints</li>
+                    <li><strong>Postman</strong> &mdash; Upload or paste a Postman Collection v2.1 JSON to import all requests with headers, bodies, scripts, and folder structure</li>
+                </ul>
+                <p>You can also import collections at startup using the <code>-import</code> flag:</p>
+                <pre class="code-block">./postit.exe -ui web -import ./my-collection.json,./other-collection.json</pre>
+
+                <h3>Export</h3>
+                <ul>
+                    <li><strong>Postman Collection:</strong> Right-click any request or folder and select <strong>Export Postman Collection</strong> to download a Postman v2.1 compatible JSON file</li>
+                    <li><strong>History (JSON/CSV):</strong> From the History tab, use the download buttons to export in JSON or CSV format</li>
+                    <li><strong>HAR:</strong> From the History tab, click <strong>Export HAR</strong> to download an HTTP Archive file</li>
+                    <li><strong>API Docs:</strong> Click the External Link icon in the sidebar toolbar, or use <code>/api/docs/generate?format=markdown|html|openapi</code></li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- ========= 7. ENVIRONMENTS & VAULT ========= -->
+        <section id="environments-vault">
+            <h2>7. Environments &amp; The Vault</h2>
+            <div class="feature-card">
+                <h3>Environment Switcher</h3>
+                <p>Manage different stages (Local, Staging, Production) using the <strong>ENV</strong> dropdown in the top toolbar. Click <strong>Environments</strong> to create and configure environments with named variables.</p>
+                <ul>
+                    <li>Each environment has a unique ID and a set of key-value variables</li>
+                    <li>Variables are resolved in the order: Local (runner) &rarr; Active Environment &rarr; Global Variables</li>
+                    <li>Switch environments instantly to change the variable context for all subsequent requests</li>
+                </ul>
+
+                <h3>The Vault <span class="tag tag-pro">Secure</span></h3>
+                <p>Mark variables as secret to encrypt them via <strong>AES-GCM</strong> with a PBKDF2-derived key. Secrets are saved to disk in encrypted form.</p>
+                <ul>
+                    <li><strong>Unlock:</strong> Click the lock icon or use <span class="btn-ref">Unlock Vault</span> to enter your master password</li>
+                    <li><strong>Encryption:</strong> AES-256-GCM with 100,000 PBKDF2 iterations</li>
+                    <li><strong>Compatibility:</strong> Supports versioned encryption (v1 legacy, v2 PBKDF2)</li>
+                    <li><strong>Status:</strong> The vault status API at <code>/api/vault/status</code> reports whether the vault is unlocked</li>
+                    <li><strong>Encrypted Variables:</strong> When locked, secret variables display as <code>[LOCKED]</code></li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- ========= 8. WORKFLOWS ========= -->
+        <section id="workflows">
+            <h2>8. Visual Workflows</h2>
+            <div class="feature-card">
+                <h3>Multi-Step API Orchestration</h3>
+                <p>Orchestrate complex multi-step API sequences via the <strong>WORKFLOWS</strong> sidebar tab. Features an interactive drag-and-drop SVG canvas.</p>
+
+                <h3>Node Types</h3>
+                <ul>
+                    <li><strong>Request Node:</strong> Fire an API call and extract data from the response using GJSON paths into workflow variables</li>
+                    <li><strong>Wait Node:</strong> Introduce an artificial delay (in milliseconds) between steps</li>
+                    <li><strong>Condition Node (If/Else):</strong> Branch execution based on GJSON evaluations of the previous response. Routes to <em>success</em> or <em>failure</em> edges.</li>
+                    <li><strong>Loop Node:</strong> Point to a JSON array path. The engine iterates over each item, injecting it as <code>{{$item}}</code> into downstream request nodes.</li>
+                    <li><strong>Script Node:</strong> Execute custom JavaScript in the workflow context</li>
+                    <li><strong>Input Node:</strong> Pause workflow execution and wait for a variable to be set (e.g., wait for an OTP code)</li>
+                </ul>
+
+                <h3>Canvas Features</h3>
+                <ul>
+                    <li><strong>Drag &amp; Drop:</strong> Nodes can be repositioned freely on the canvas</li>
+                    <li><strong>Edge Drawing:</strong> Connect nodes by drawing edges to define execution flow</li>
+                    <li><strong>Cycle Detection:</strong> The engine detects potential infinite loops (max 1000 visits per node)</li>
+                    <li><strong>Execution Logs:</strong> View real-time logs as the workflow runs</li>
+                    <li><strong>Visualize:</strong> Generate Mermaid.js sequence diagrams from workflow execution</li>
+                </ul>
+
+                <h3>Validation</h3>
+                <p>Workflows are validated before execution. Checks include:</p>
+                <ul>
+                    <li>All referenced nodes exist</li>
+                    <li>All request nodes reference valid request paths</li>
+                    <li>No excessive edges (potential cycles)</li>
+                    <li>Maximum task limit of 5,000 steps to prevent runaway executions</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- ========= 9. POWER TOOLS ========= -->
+        <section id="power-tools">
+            <h2>9. Power Tools</h2>
+
+            <!-- 9.1 HAMMER -->
+            <div class="feature-card" id="hammer">
+                <h3>9.1 Hammer (Load Testing)</h3>
+                <p>Switch to the <strong>Hammer</strong> tab in the editor to stress-test the current request. Configure concurrency (Workers) and duration, then click <strong>Start Hammering</strong>.</p>
+                <ul>
+                    <li><strong>Live Dashboard:</strong> View total requests, RPS (Requests Per Second), and average latency in real-time</li>
+                    <li><strong>Percentiles:</strong> Automatically calculates P95 and P99 latencies</li>
+                    <li><strong>Chart.js Integration:</strong> Watch a live graphical plot of your API's performance stability</li>
+                    <li><strong>Status Codes:</strong> Breakdown of all HTTP status codes received</li>
+                    <li><strong>Smart Pre-Resolution:</strong> Static variables and headers are resolved once for all workers (configurable per-iteration for dynamic values)</li>
+                </ul>
+            </div>
+
+            <!-- 9.2 SQL -->
+            <div class="feature-card" id="sql">
+                <h3>9.2 SQL Sidekick</h3>
+                <p>Run SQL queries immediately after an API call to verify the data layer. Accessible from the <strong>SQL</strong> tab in the editor.</p>
+                <ul>
+                    <li><strong>Supported Drivers:</strong> SQLite, PostgreSQL, MySQL</li>
+                    <li><strong>Auto-Detection:</strong> Driver is automatically detected from the connection string format</li>
+                    <li><strong>Read-Only Protection:</strong> Dangerous keywords (DROP, DELETE, INSERT, UPDATE, etc.) are blocked. Unicode homoglyph bypasses are detected and prevented.</li>
+                    <li><strong>Connection Pooling:</strong> Database connections are pooled with LRU eviction (max 50 connections, 1 hour max age)</li>
+                    <li><strong>Extract to Var:</strong> Pull a specific cell from a SQL result (e.g., column <code>id</code>) and save it directly to a variable (e.g., <code>user_id</code>) for the next API call</li>
+                </ul>
+            </div>
+
+            <!-- 9.3 WEBSOCKET -->
+            <div class="feature-card" id="websocket">
+                <h3>9.3 WebSocket Client</h3>
+                <p>Connect to and interact with WebSocket servers directly from the <strong>WS</strong> sidebar tab.</p>
+                <ul>
+                    <li><strong>URL:</strong> Enter <code>ws://</code> or <code>wss://</code> URLs</li>
+                    <li><strong>Interactive Log:</strong> View incoming and outgoing messages with precise timestamps and color-coding</li>
+                    <li><strong>Persistent Connection:</strong> The connection stays open while you navigate other parts of the app</li>
+                    <li><strong>Buffer:</strong> Up to 1,000 messages are kept in the buffer</li>
+                    <li><strong>Security:</strong> Origin validation follows same rules as the main API (localhost, 127.0.0.1, or matching Host header)</li>
+                </ul>
+            </div>
+
+            <!-- 9.4 PROXY -->
+            <div class="feature-card" id="proxy">
+                <h3>9.4 Proxy Mode (The Observer)</h3>
+                <p>PostIt can act as an HTTP Proxy to intercept and record traffic from your browser or mobile applications.</p>
+                <ul>
+                    <li><strong>Start:</strong> Click <span class="btn-ref">Start Proxy</span> in the toolbar and choose a port (default 8888)</li>
+                    <li><strong>Intercept:</strong> Configure your application or OS to use PostIt as its HTTP proxy. All outgoing traffic will be captured and saved as new requests under <code>Intercepted &gt; [Date]</code>.</li>
+                    <li><strong>Auto-Refresh:</strong> The sidebar automatically updates every 5 seconds while the proxy is running</li>
+                    <li><strong>SSRF Protection:</strong> Private IPs (localhost, 127.0.0.1, AWS metadata, etc.) and non-HTTP/HTTPS schemes are blocked by default</li>
+                    <li><strong>Status:</strong> The toolbar button toggles between <span class="btn-ref">Start Proxy</span> and <span class="btn-ref">Stop Proxy</span></li>
+                </ul>
+            </div>
+
+            <!-- 9.5 MOCK -->
+            <div class="feature-card" id="mocks">
+                <h3>9.5 Intelligent Mock Server</h3>
+                <p>Start PostIt with <code>-mock</code> flag to enable the mock server at <code>/mock/</code>:</p>
+                <pre class="code-block">./postit.exe -ui web -mock</pre>
+                <ul>
+                    <li><strong>Dynamic Routing:</strong> Define paths like <code>/users/:id</code>. PostIt extracts <code>:id</code> and exposes it as a variable for the mock response.</li>
+                    <li><strong>Conditional Mocks:</strong> Save multiple mocks for one route with GJSON conditions (e.g., <code>id == "5"</code>). The server evaluates the incoming request body and serves the correct response.</li>
+                    <li><strong>Simulated Latency:</strong> Add a <code>Delay (ms)</code> to any mock to simulate slow network conditions</li>
+                    <li><strong>Mock Management:</strong> View, add, and delete mocks directly from the <strong>Mocks</strong> tab in the request editor</li>
+                    <li><strong>Stats Dashboard:</strong> The <strong>MOCK</strong> sidebar tab shows hit counts and last access times for all mock endpoints</li>
+                    <li><strong>Variable Resolution:</strong> Mock response bodies and headers support <code>{{variable}}</code> resolution</li>
+                </ul>
+            </div>
+
+            <!-- 9.6 FUZZER -->
+            <div class="feature-card" id="fuzzer">
+                <h3>9.6 Security Fuzzer</h3>
+                <p>One-click security scan from the <strong>SECURITY</strong> response tab or the <strong>Fuzzer</strong> workflow action. Injects payloads into request body fields and query parameters to find vulnerabilities.</p>
+                <ul>
+                    <li><strong>SQL Injection:</strong> Tests with <code>' OR 1=1 --</code>, <code>'; DROP TABLE --</code>, <code>sleep(5)</code>, and more</li>
+                    <li><strong>XSS:</strong> Tests with <code>&lt;script&gt;alert(1)&lt;/script&gt;</code>, <code>javascript:alert(1)</code>, SVG/onload vectors</li>
+                    <li><strong>Robustness:</strong> Edge cases like <code>null</code>, <code>undefined</code>, very large numbers, empty strings</li>
+                    <li><strong>Concurrent Scanning:</strong> Up to 20 concurrent requests for fast results</li>
+                    <li><strong>Results Table:</strong> Each payload shows the field targeted, HTTP status code, and response time</li>
+                </ul>
+            </div>
+
+            <!-- 9.7 RUNNER -->
+            <div class="feature-card" id="runner">
+                <h3>9.7 Data-Driven Runner</h3>
+                <p>Execute a request multiple times with different data sets from the <strong>Runner</strong> tab.</p>
+                <ul>
+                    <li><strong>Upload Data:</strong> Upload a CSV or JSON array file</li>
+                    <li><strong>Variable Mapping:</strong> File columns/keys are automatically mapped to <code>{{variable_name}}</code> placeholders in the request</li>
+                    <li><strong>Local Variables:</strong> Each row's data is injected as local variables, taking precedence over environment and global variables</li>
+                    <li><strong>Results:</strong> An iteration table shows status code, status text, and duration for each run</li>
+                    <li><strong>Post-Request Scripts:</strong> Test scripts run after each iteration with the local variable context</li>
+                </ul>
+            </div>
+
+            <!-- 9.8 GRAPHQL -->
+            <div class="feature-card" id="graphql">
+                <h3>9.8 GraphQL Explorer</h3>
+                <p>Select the <strong>GraphQL</strong> body mode to access the dedicated GraphQL editor with schema introspection support.</p>
+                <ul>
+                    <li><strong>Query Editor:</strong> Write GraphQL queries with syntax highlighting</li>
+                    <li><strong>Variables Panel:</strong> Separate editor for GraphQL variables (JSON format)</li>
+                    <li><strong>Schema Introspection:</strong> Click <strong>Introspect</strong> to fetch and browse the remote GraphQL schema (types, fields, arguments, enums, directives)</li>
+                    <li><strong>Schema Browser:</strong> Navigate the schema tree in the side panel</li>
+                    <li>Introspection queries use the standard <code>__schema</code> meta-query with full type references</li>
+                </ul>
+            </div>
+
+            <!-- 9.9 SCHEMA -->
+            <div class="feature-card" id="schema">
+                <h3>9.9 Schema Generation &amp; Validation</h3>
+                <p><strong>Generate:</strong> Create a JSON Schema from any sample JSON response. The generator infers types (string, number, integer, boolean, array, object) and marks all discovered fields as required.</p>
+                <p><strong>Validate:</strong> Validate any JSON response against a predefined schema. Checks include:</p>
+                <ul>
+                    <li>Type matching (object, array, primitive)</li>
+                    <li>Required field presence</li>
+                    <li>Array item type consistency</li>
+                    <li>Detailed error messages for each validation failure</li>
+                </ul>
+                <p>API endpoints:</p>
+                <ul>
+                    <li><code>POST /api/schema/generate</code> &mdash; Generate schema from sample body</li>
+                    <li><code>POST /api/schema/validate</code> &mdash; Validate body against schema</li>
+                </ul>
+            </div>
+
+            <!-- 9.10 DOCS GENERATION -->
+            <div class="feature-card" id="docs-gen">
+                <h3>9.10 API Documentation Generator</h3>
+                <p>Generate beautiful API documentation directly from your collection. Access via the sidebar toolbar or API.</p>
+                <p><strong>Formats:</strong></p>
+                <ul>
+                    <li><strong>Markdown:</strong> Clean markdown with headers, code blocks, and request/response details</li>
+                    <li><strong>HTML:</strong> Self-contained HTML page with dark-themed styling, ready for hosting</li>
+                    <li><strong>OpenAPI 3.0:</strong> Standard OpenAPI JSON specification for use with Swagger UI, Redoc, etc.</li>
+                </ul>
+                <p>Download via: <code>GET /api/docs/generate?format=markdown|html|openapi</code></p>
+            </div>
+
+            <!-- 9.11 SNIPPETS -->
+            <div class="feature-card" id="snippets">
+                <h3>9.11 Code Snippets</h3>
+                <p>Click <strong>Code Snippet</strong> in the editor toolbar to generate ready-to-use code for any request. Supported languages:</p>
+                <ul>
+                    <li><strong>JavaScript</strong> &mdash; Fetch API</li>
+                    <li><strong>Go</strong> &mdash; net/http</li>
+                    <li><strong>Python</strong> &mdash; requests library</li>
+                </ul>
+            </div>
+
+            <!-- 9.12 ARCHITECTURE -->
+            <div class="feature-card" id="architecture">
+                <h3>9.12 Architecture Visualizer</h3>
+                <p>Generate Mermaid.js sequence diagrams from your request history or workflow executions. Accessible from:</p>
+                <ul>
+                    <li><strong>History Tab:</strong> Click the <strong>Visualize Flow</strong> button to generate a diagram from selected history records</li>
+                    <li><strong>Workflow Logs:</strong> Click the <strong>Visualize Last Run</strong> button after executing a workflow</li>
+                </ul>
+                <p>Sequence diagrams can be <strong>exported as SVG</strong> for use in documentation, presentations, or wikis.</p>
+            </div>
+        </section>
+
+        <!-- ========= 10. CLI RUNNER ========= -->
+        <section id="cli">
+            <h2>10. CLI Runner (CI/CD)</h2>
+            <div class="feature-card">
+                <p>Execute your collections entirely headlessly from the terminal for automation pipelines:</p>
+                <pre class="code-block">./postit.exe run --collection ./output/history.json --env ./output/environments.json --delay 500</pre>
+                <p>Flags:</p>
+                <ul>
+                    <li><code>--collection</code> &mdash; Path to the collection JSON file (required)</li>
+                    <li><code>--env</code> &mdash; Path to an environment JSON file (optional)</li>
+                    <li><code>--delay</code> &mdash; Delay between requests in milliseconds (optional)</li>
+                </ul>
+                <p>The CLI runner:</p>
+                <ul>
+                    <li>Loads the environment if provided (sets it as the active environment)</li>
+                    <li>Executes requests in the exact order defined in the collection</li>
+                    <li>Runs pre-request and post-request scripts for each request</li>
+                    <li>Prints colored output (green for 2xx/3xx, red for 4xx/5xx)</li>
+                    <li>Exits when all requests have been processed</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- ========= 11. TUI ========= -->
+        <section id="tui">
+            <h2>11. Terminal UI (TUI)</h2>
+            <div class="feature-card">
+                <p>PostIt includes a full Terminal User Interface for use in SSH sessions or terminal-only environments:</p>
+                <pre class="code-block">./postit.exe -ui tui</pre>
+                <p>The TUI provides:</p>
+                <ul>
+                    <li>Request list navigation with keyboard shortcuts</li>
+                    <li>Inline request editing</li>
+                    <li>Response viewing</li>
+                    <li>Variable and global header management</li>
+                    <li>Create, edit, duplicate, and delete requests</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- ========= 12. KEYBOARD SHORTCUTS ========= -->
+        <section id="keyboard">
+            <h2>12. Keyboard Shortcuts</h2>
+            <div class="feature-card">
+                <table class="shortcuts-table">
+                    <thead>
+                        <tr><th>Shortcut</th><th>Action</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>Ctrl+P</code></td><td>Quick Jump &mdash; search and navigate to any request</td></tr>
+                        <tr><td><code>Ctrl+Shift+P</code></td><td>Command Palette &mdash; access all app functions</td></tr>
+                        <tr><td><code>Alt+Shift++</code></td><td>Expand all JSON nodes in the response</td></tr>
+                        <tr><td><code>Alt+Shift+-</code></td><td>Collapse all JSON nodes in the response</td></tr>
+                        <tr><td><code>Tab</code></td><td>Insert 4-space indent in the body editor</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <footer style="margin-top: 60px; padding-bottom: 40px; text-align: center; color: var(--text-secondary); font-size: 12px;">
+            PostIt API Client &bull; Built for Developers
+        </footer>
+    </div>
+</body>
+</html>

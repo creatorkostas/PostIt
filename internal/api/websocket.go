@@ -7,10 +7,14 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+// DefaultWebSocketReadTimeout is the maximum time to wait for a message before closing
+const DefaultWebSocketReadTimeout = 60 * time.Second
 
 // WebSocket configuration constants
 const (
@@ -31,6 +35,7 @@ type WSClient struct {
 	mu       sync.Mutex
 	connMu   sync.Mutex
 	cancel   context.CancelFunc
+	connGen  atomic.Int64 // incremented on each Connect to detect stale goroutines
 }
 
 func NewWSClient() *WSClient {
@@ -64,7 +69,7 @@ func (c *WSClient) Connect(url string) error {
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 
-	// 1. Cancel previous reader if it exists
+	// 1. Cancel previous listener if it exists
 	if c.cancel != nil {
 		c.cancel()
 		if c.Conn != nil {
@@ -82,16 +87,19 @@ func (c *WSClient) Connect(url string) error {
 	}
 	
 	c.Conn = conn
+	c.connGen.Add(1)
+	myGen := c.connGen.Load()
+	
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 	
 	// Start listener
-	go func(ctx context.Context) {
+	go func(ctx context.Context, gen int64) {
 		currentConn := conn
 		defer func() {
 			currentConn.Close()
 			c.connMu.Lock()
-			if c.Conn == currentConn {
+			if c.connGen.Load() == gen {
 				c.Conn = nil
 			}
 			c.connMu.Unlock()
@@ -101,8 +109,16 @@ func (c *WSClient) Connect(url string) error {
 			case <-ctx.Done():
 				return
 			default:
+				// Set read deadline to prevent hanging on unresponsive servers
+				currentConn.SetReadDeadline(time.Now().Add(DefaultWebSocketReadTimeout))
+
 				_, message, err := currentConn.ReadMessage()
 				if err != nil {
+					// Check if it's a timeout
+					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+						c.addMessage("error", "read timeout")
+						return
+					}
 					// Check if it's a normal closure or if we cancelled it
 					select {
 					case <-ctx.Done():
@@ -115,7 +131,7 @@ func (c *WSClient) Connect(url string) error {
 				c.addMessage("received", string(message))
 			}
 		}
-	}(ctx)
+	}(ctx, myGen)
 	
 	return nil
 }

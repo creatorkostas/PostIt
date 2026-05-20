@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"embed"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -11,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"postit/internal/api"
+	"postit/internal/assets"
 	"postit/internal/models"
 	"postit/internal/processor"
 	"postit/internal/storage"
@@ -18,9 +18,6 @@ import (
 	"sync"
 	"time"
 )
-
-//go:embed static/*
-var staticAssets embed.FS
 
 type Server struct {
 	Storage    *storage.Manager
@@ -144,6 +141,7 @@ func (s *Server) Start(ctx context.Context, port int) error {
 	http.HandleFunc("/api/sql", s.recoveryMiddleware(s.csrfMiddleware(s.handleSQLRequest)))
 	http.HandleFunc("/api/schema/generate", s.recoveryMiddleware(s.csrfMiddleware(s.handleSchemaGenerate)))
 	http.HandleFunc("/api/schema/validate", s.recoveryMiddleware(s.csrfMiddleware(s.handleSchemaValidate)))
+	http.HandleFunc("/api/schema/save", s.recoveryMiddleware(s.csrfMiddleware(s.handleSchemaSave)))
 	http.HandleFunc("/api/mock/save", s.recoveryMiddleware(s.csrfMiddleware(s.handleSaveMockResponse)))
 	http.HandleFunc("/api/mock/delete", s.recoveryMiddleware(s.csrfMiddleware(s.handleDeleteMock)))
 	http.HandleFunc("/api/mock/stats", s.recoveryMiddleware(s.csrfMiddleware(s.handleMockStats)))
@@ -178,7 +176,7 @@ func (s *Server) Start(ctx context.Context, port int) error {
 		})
 	}
 
-	fsys, err := fs.Sub(staticAssets, "static")
+	fsys, err := fs.Sub(assets.FS, "frontend")
 	if err != nil {
 		return err
 	}
@@ -246,6 +244,7 @@ func (s *Server) handleNewRequest(w http.ResponseWriter, r *http.Request) {
 		PreRequestScript string              `json:"preRequestScript"`
 		TestScript       string              `json:"testScript"`
 		Note             string              `json:"note"`
+		Schema           string              `json:"schema"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -354,6 +353,7 @@ func (s *Server) handleUpdateRequest(w http.ResponseWriter, r *http.Request) {
 		PreRequestScript string              `json:"preRequestScript"`
 		TestScript       string              `json:"testScript"`
 		Note             string              `json:"note"`
+		Schema           string              `json:"schema"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -385,6 +385,7 @@ func (s *Server) handleUpdateRequest(w http.ResponseWriter, r *http.Request) {
 	s.FlatList[idx].Request.Body.Raw = input.BodyRaw
 	s.FlatList[idx].Request.Body.UrlEncoded = input.UrlEncoded
 	s.FlatList[idx].Note = input.Note
+	s.FlatList[idx].Schema = input.Schema
 
 	s.FlatList[idx].Events = []models.Event{}
 	if input.PreRequestScript != "" {
@@ -1334,6 +1335,41 @@ func validateAgainstSchema(body string, schema JSONSchema) (bool, []string) {
 	return len(errors) == 0, errors
 }
 
+// handleSchemaSave saves a response schema for a request
+func (s *Server) handleSchemaSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct {
+		RequestPath string `json:"requestPath"`
+		Schema      string `json:"schema"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+
+	for i := range s.FlatList {
+		if s.FlatList[i].Path == input.RequestPath {
+			s.FlatList[i].Schema = input.Schema
+			if err := s.Storage.SaveSingleRequest(s.FlatList[i]); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]bool{"success": true})
+			return
+		}
+	}
+
+	http.Error(w, "Request not found", http.StatusNotFound)
+}
+
 // handleSaveMockResponse saves a mock response for a request
 func (s *Server) handleSaveMockResponse(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -1626,13 +1662,18 @@ func generateMarkdownDocs(w http.ResponseWriter, collectionName string, requests
 			fmt.Fprintf(w, "**Body:**\n```json\n%s\n```\n\n", req.Request.Body.Raw)
 		}
 
-	if req.Note != "" {
-		fmt.Fprintf(w, "**Note:** %s\n\n", req.Note)
-	}
+		if req.Schema != "" {
+			fmt.Fprintln(w, "**Response Schema:**")
+			fmt.Fprintf(w, "```json\n%s\n```\n\n", req.Schema)
+		}
 
-	fmt.Fprintln(w, "---")
-	fmt.Fprintln(w)
-}
+		if req.Note != "" {
+			fmt.Fprintf(w, "**Note:** %s\n\n", req.Note)
+		}
+
+		fmt.Fprintln(w, "---")
+		fmt.Fprintln(w)
+	}
 }
 
 func generateHTMLDocs(w http.ResponseWriter, collectionName string, requests []models.RequestInfo) {
@@ -1647,6 +1688,7 @@ func generateHTMLDocs(w http.ResponseWriter, collectionName string, requests []m
 		.url { color: #333; font-family: monospace; margin: 10px 0; }
 		.headers { background: #f9f9f9; padding: 10px; border-radius: 4px; }
 		body-section { background: #263238; color: #aed581; padding: 15px; border-radius: 4px; font-family: monospace; overflow-x: auto; }
+		.schema-section { background: #1a237e; color: #b39ddb; padding: 15px; border-radius: 4px; margin-top: 10px; font-family: monospace; overflow-x: auto; }
 		h1 { color: #333; border-bottom: 2px solid #2196F3; padding-bottom: 10px; }
 		h2 { color: #555; margin-top: 0; }
 	</style>
@@ -1675,6 +1717,13 @@ func generateHTMLDocs(w http.ResponseWriter, collectionName string, requests []m
 			fmt.Fprintln(w, "</div>")
 		}
 
+		if req.Schema != "" {
+			fmt.Fprintln(w, `<div class="schema-section">`)
+			fmt.Fprintln(w, `<strong>Response Schema:</strong>`)
+			fmt.Fprintf(w, "<pre>%s</pre>\n", req.Schema)
+			fmt.Fprintln(w, "</div>")
+		}
+
 		fmt.Fprintln(w, "</div>")
 	}
 
@@ -1689,13 +1738,27 @@ func generateOpenAPIDocs(w http.ResponseWriter, collectionName string, requests 
 		if _, ok := paths[url]; !ok {
 			paths[url] = make(map[string]interface{})
 		}
+
+		// Build response object with optional schema
+		responseObj := map[string]interface{}{
+			"description": "OK",
+		}
+		if req.Schema != "" {
+			var schemaObj interface{}
+			if err := json.Unmarshal([]byte(req.Schema), &schemaObj); err == nil {
+				responseObj["content"] = map[string]interface{}{
+					"application/json": map[string]interface{}{
+						"schema": schemaObj,
+					},
+				}
+			}
+		}
+
 		paths[url][method] = map[string]interface{}{
 			"summary":     req.Path,
 			"description": req.Note,
 			"responses": map[string]interface{}{
-				"200": map[string]string{
-					"description": "OK",
-				},
+				"200": responseObj,
 			},
 		}
 	}

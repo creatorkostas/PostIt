@@ -79,47 +79,56 @@ func (f *Fuzzer) Run(ctx context.Context, reqInfo models.RequestInfo, variables 
 		queryParams = u.Query()
 	}
 
-	// Fuzz Body
-	for key := range bodyMap {
-		for category, pList := range payloads {
-			for _, p := range pList {
-				wg.Add(1)
-				sem <- struct{}{}
-				go func(k, p, cat string) {
-					defer wg.Done()
-					defer func() { <-sem }()
-					res := f.executeFuzz(ctx, reqInfo, k, p, "body", bodyMap, queryParams)
-					mu.Lock()
-					results = append(results, res)
-					mu.Unlock()
-				}(key, p, category)
+	// fuzzTarget spawns goroutines to fuzz a list of field keys with all payloads
+	fuzzTarget := func(target string, fieldKeys []string) {
+		for _, key := range fieldKeys {
+			for category, pList := range payloads {
+				for _, p := range pList {
+					select {
+					case sem <- struct{}{}:
+					case <-ctx.Done():
+						return
+					}
+					wg.Add(1)
+					go func(k, p, cat string) {
+						defer wg.Done()
+						defer func() { <-sem }()
+						res := f.executeFuzz(ctx, reqInfo, k, p, target, bodyMap, queryParams)
+						mu.Lock()
+						results = append(results, res)
+						mu.Unlock()
+					}(key, p, category)
+				}
 			}
 		}
 	}
 
-	// Fuzz Query Params
-	for key := range queryParams {
-		for category, pList := range payloads {
-			for _, p := range pList {
-				wg.Add(1)
-				sem <- struct{}{}
-				go func(k, p, cat string) {
-					defer wg.Done()
-					defer func() { <-sem }()
-					res := f.executeFuzz(ctx, reqInfo, k, p, "query", bodyMap, queryParams)
-					mu.Lock()
-					results = append(results, res)
-					mu.Unlock()
-				}(key, p, category)
-			}
-		}
+	// Fuzz Body
+	bodyKeys := make([]string, 0, len(bodyMap))
+	for k := range bodyMap {
+		bodyKeys = append(bodyKeys, k)
 	}
+	fuzzTarget("body", bodyKeys)
+
+	// Fuzz Query Params
+	queryKeys := make([]string, 0, len(queryParams))
+	for k := range queryParams {
+		queryKeys = append(queryKeys, k)
+	}
+	fuzzTarget("query", queryKeys)
 
 	wg.Wait()
 	return results, nil
 }
 
 func (f *Fuzzer) executeFuzz(ctx context.Context, reqInfo models.RequestInfo, key, payload, target string, originalBody map[string]interface{}, originalQuery url.Values) FuzzResult {
+	// Check context before starting work
+	select {
+	case <-ctx.Done():
+		return FuzzResult{Field: key, Payload: payload, Error: ctx.Err().Error()}
+	default:
+	}
+
 	// Clone and Inject
 	fuzzedUrl := reqInfo.Request.URL.Raw
 	var fuzzedBody []byte
