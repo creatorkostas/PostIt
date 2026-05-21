@@ -1393,7 +1393,6 @@ schema: req.schema || ''
                 showToast("Failed to save variables: " + e.message, "error");
             }
         }
-        }
 
         function showContextMenu(x, y, path) {
             const menu = document.getElementById('context-menu');
