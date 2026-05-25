@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PostIt - Documentation</title>
+    <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Back to App</a>
+        <header>
+            <h1>PostIt Documentation</h1>
+            <p style="color: var(--text-secondary);">Your local-first, Git-friendly API client & test automation tool.</p>
+        </header>
+
+        <section id="sidebar">
+            <h2>1. Navigation & Ecosystem</h2>
+            <div class="feature-card">
+                <h3>Global Search & Navigation <span class="tag tag-pro">Pro</span></h3>
+                <p>Press <code>Ctrl+P</code> anywhere in the app to open the Quick Jump menu. Type a path or method to instantly navigate across your entire workspace.</p>
+                
+                <h3>Environment Switcher & The Vault <span class="tag tag-pro">Pro</span></h3>
+                <p>Manage different stages (e.g., Local, Staging, Prod) using the <strong>ENV</strong> dropdown in the toolbar. Click <strong>Environments</strong> to configure variables per stage.</p>
+                <ul>
+                    <li><strong>The Vault:</strong> Mark variables as secret (🔒). They are encrypted via AES-GCM and saved to disk safely. You must unlock the vault with your master password to use them.</li>
+                </ul>
+
+                <h3>Import & Export</h3>
+                <ul>
+                    <li><span class="btn-ref">Import</span> Paste a <code>cURL</code> command to instantly generate a full request profile.</li>
+                    <li><span class="btn-ref">Publish</span> Click this to automatically generate and host a beautiful, static HTML documentation page for all your requests.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="request">
+            <h2>2. Request Editor & Automation</h2>
+            <div class="feature-card">
+                <h3>Magic Variables <span class="tag tag-pro">Pro</span></h3>
+                <p>Instantly generate dynamic data in URLs, Headers, or Body by using double curly braces. Supported magic variables include:</p>
+                <ul>
+                    <li><code>{{$guid}}</code> - Generates a UUID v4</li>
+                    <li><code>{{$timestamp}}</code> - Current Unix timestamp</li>
+                    <li><code>{{$isoTimestamp}}</code> - Current ISO-8601 time</li>
+                    <li><code>{{$randomInt}}</code> - Random integer (0-1000)</li>
+                    <li><code>{{$randomPassword}}</code> - Generates a secure 12-character string</li>
+                </ul>
+
+                <h3>Standard Configuration</h3>
+                <ul>
+                    <li><strong>Body:</strong> Supports <code>raw</code> (JSON/Text) and <code>x-www-form-urlencoded</code>. Click <strong>Beautify JSON</strong> to format raw bodies.</li>
+                    <li><strong>Scripts:</strong> Write JS to run <em>before</em> or <em>after</em> requests. Supports <code>gjson</code> data extraction.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="history">
+            <h2>1. Request & Response History <span class="tag tag-new">New</span></h2>
+            <div class="feature-card">
+                <h3>Persistent Snapshots & Ordering</h3>
+                <p>Every request sent via the Web UI, TUI, or CLI is now automatically recorded in the <strong>HISTORY</strong> tab with its full context.</p>
+                <ul>
+                    <li><strong>Absolute Ordering:</strong> Collections now maintain their exact import sequence. Whether loading from disk or importing a new Postman file, your requests stay exactly where you put them.</li>
+                    <li><strong>Full Response Saving:</strong> Unlike traditional clients, PostIt saves the <strong>exact response body and headers</strong> for every historical call.</li>
+                    <li><strong>Time Travel:</strong> Click any item in the History sidebar to instantly restore that specific response snapshot, even if the server's data has since changed.</li>
+                    <li><strong>Metadata:</strong> Each record includes the precise timestamp, method, resolved URL, status code, and millisecond duration.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="response">
+            <h2>3. Response & Validation</h2>
+            <div class="feature-card">
+                <h3>Advanced JSON Transformation Engine <span class="tag tag-pro">Pro</span></h3>
+                <p>PostIt features a powerful query engine in the response <strong>FILTER</strong> bar. You can drill down, search, filter, and transform JSON data on the fly.</p>
+                
+                <h4 style="margin-top: 20px; color: var(--accent);">Multi-Filtering & Exclusions <span class="tag tag-new">New</span></h4>
+                <p>You can now combine multiple filters and exclusions in a single line, separated by spaces.</p>
+                <ul>
+                    <li><strong>Multiple Exclusions:</strong> Hide several deep keys at once. <br><code>-**.literals -**.assets -metadata</code></li>
+                    <li><strong>Combined Query:</strong> Exclude data first, then run a path query. <br><code>-**.debugInfo data.users[active=true]</code></li>
+                </ul>
+
+                <h4 style="margin-top: 20px; color: var(--accent);">Filtering & Searching</h4>
+                <ul>
+                    <li><strong>Drill Down:</strong> Standard dot notation. <br><code>data.user.profile</code></li>
+                    <li><strong>Exclude:</strong> Hide specific keys using the minus prefix. Supports deep search. <br><code>-data.logs</code> or <code>-**.password</code></li>
+                    <li><strong>Deep Search:</strong> Find a key anywhere in the JSON hierarchy. <br><code>**.id</code> (Returns all IDs found at any level)</li>
+                    <li><strong>Predicates:</strong> Filter arrays by property values. Supports <code>=, !=, >, <, >=, <=</code>. <br><code>data.users[id=5]</code> or <code>products[price>100]</code></li>
+                </ul>
+
+                <h4 style="margin-top: 20px; color: var(--accent);">Projections & Formatting</h4>
+                <ul>
+                    <li><strong>Field Projection:</strong> Pick specific fields to clean up the view. <br><code>data.users{id, username, email}</code></li>
+                    <li><strong>Flatten View:</strong> Convert nested objects into a single-level key-value map. <br><code>data | flatten</code></li>
+                </ul>
+
+                <h4 style="margin-top: 20px; color: var(--accent);">Transformation Pipes</h4>
+                <p>Chain transformations using the pipe (<code>|</code>) character:</p>
+                <ul>
+                    <li><code>| count</code> - Returns the number of items in an array or keys in an object.</li>
+                    <li><code>| first</code> / <code>| last</code> - Returns the first or last item of an array.</li>
+                    <li><code>| sort:key</code> - Sorts an array of objects by the specified key.</li>
+                    <li><code>| keys</code> - Returns a list of all top-level keys in an object.</li>
+                </ul>
+
+                <h4 style="margin-top: 20px; color: var(--accent);">Example Advanced Queries</h4>
+                <ul>
+                    <li><strong>Exclude & Count:</strong> <code>-**.metadata data.items | count</code></li>
+                    <li><strong>Deep Find & First:</strong> <code>**.emails | first</code></li>
+                    <li><strong>Complex Chain:</strong> <code>data.users[role=admin]{id, name} | sort:name</code></li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>Standard Analysis</h3>
+                <ul>
+                    <li><strong>JWT Tab:</strong> Automatically detects, extracts, and decodes any JSON Web Tokens found in the response body or headers.</li>
+                    <li><strong>Diff Tab:</strong> Compare your current response side-by-side with a pinned Baseline.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="pro-tools">
+            <h2>4. Advanced Power Tools <span class="tag tag-pro">Pro</span></h2>
+            
+            <div class="feature-card">
+                <h3>The Hammer (Load Testing)</h3>
+                <p>Switch to the <strong>Hammer</strong> tab to stress-test the current request. Set your Concurrency (Workers) and Duration.</p>
+                <ul>
+                    <li><strong>Live Dashboard:</strong> View total requests, RPS (Requests Per Second), and average latency in real-time.</li>
+                    <li><strong>Percentiles:</strong> Automatically calculates strict P95 and P99 latencies.</li>
+                    <li><strong>Chart.js Integration:</strong> Watch a live graphical plot of your API's performance stability.</li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>Database Sidekick (SQL)</h3>
+                <p>Run SQL queries immediately after an API call to verify the data layer. Supports <strong>SQLite, PostgreSQL, and MySQL</strong>.</p>
+                <ul>
+                    <li><strong>Extract to Var:</strong> Pull a specific cell from your SQL result (e.g., column <code>id</code>) and save it directly to an Environment Variable (e.g., <code>user_id</code>) for the next API call.</li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>Visual Workflows</h3>
+                <p>Orchestrate multi-step API sequences via the <strong>WORKFLOWS</strong> sidebar tab. Features an interactive Drag-and-Drop SVG Canvas.</p>
+                <ul>
+                    <li><strong>Request Nodes:</strong> Fire API calls and extract data using GJSON paths into variables.</li>
+                    <li><strong>Condition Nodes (If/Else):</strong> Branch execution (Success/Failure lines) based on GJSON evaluations of the previous response.</li>
+                    <li><strong>Loop Nodes:</strong> Point to a JSON array. The engine will loop the attached sub-chain for every item, injecting the current payload as <code>{{$item}}</code>.</li>
+                    <li><strong>Wait Nodes:</strong> Introduce artificial delays between calls.</li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>The Observer (Proxy Mode) <span class="tag tag-pro">Pro</span></h3>
+                <p>PostIt can act as an HTTP Proxy to intercept and record traffic from your browser or mobile applications.</p>
+                <ul>
+                    <li><strong>Start:</strong> Click <span class="btn-ref">📡 Start Proxy</span> in the toolbar and choose a port (default 8081).</li>
+                    <li><strong>Intercept:</strong> Configure your application or OS to use PostIt as its HTTP proxy. All outgoing traffic will be cloned and saved as new requests.</li>
+                    <li><strong>Auto-Refresh:</strong> The sidebar automatically updates every 5 seconds while the proxy is running, showing newly captured requests under <code>Intercepted > [Date]</code>.</li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>Intelligent Mocks</h3>
+                <p>Start PostIt with <code>./postit.exe -ui web -mock</code> to spin up a local server on <code>/mock/</code>.</p>
+                <ul>
+                    <li><strong>Dynamic Routing:</strong> Define paths like <code>/users/:id</code>. PostIt extracts <code>:id</code> and exposes it as a variable for the mock response.</li>
+                    <li><strong>Conditional Mocks:</strong> Save multiple mocks for one route. Define a GJSON condition (e.g., <code>id == "5"</code>). The mock server evaluates the incoming request body and serves the correct dynamic response.</li>
+                    <li><strong>Simulated Latency <span class="tag tag-new">New</span>:</strong> Add a <code>Delay (ms)</code> to any mock to simulate slow network conditions or long-running operations.</li>
+                    <li><strong>Mock Management <span class="tag tag-new">New</span>:</strong> View and delete saved mocks directly from the <strong>Mocks</strong> tab in the request editor.</li>
+                </ul>
+            </div>
+
+            <div class="feature-card">
+                <h3>Real-time Communication (WebSockets) <span class="tag tag-new">New</span></h3>
+                <p>Connect to and interact with WebSocket servers directly from the <strong>WS</strong> sidebar tab.</p>
+                <ul>
+                    <li><strong>Interactive Log:</strong> View incoming and outgoing messages with precise timestamps and color-coding.</li>
+                    <li><strong>Persistent Connection:</strong> Keep the connection open while you navigate other parts of the app.</li>
+                </ul>
+            </div>
+
+             <div class="feature-card">
+                <h3>CLI Runner (CI/CD)</h3>
+                <p>Execute your collections entirely headlessly from the terminal for automation pipelines:</p>
+                <code>./postit.exe run --collection ./output/history.json --env ./output/environments.json --delay 500</code>
+                <p style="margin-top: 10px; font-size: 13px;">The CLI runner respects the <strong>Absolute Order</strong> of your collection, ensuring tests run in the exact sequence defined in your workspace.</p>
+            </div>
+
+            <div class="feature-card">
+                <h3>Advanced Features <span class="tag tag-new">v2.0</span></h3>
+                <ul>
+                    <li><strong>Command Palette (Ctrl+Shift+P):</strong> Rapidly access all app functions (JSON formatting, environment switching, etc.) via a fuzzy-search interface.</li>
+                    <li><strong>Security Fuzzer:</strong> One-click scan for common vulnerabilities. Injects SQLi, XSS, and robustness payloads into your request body and query parameters to find 500 errors.</li>
+                    <li><strong>Architecture Visualizer:</strong> Generates beautiful Mermaid.js sequence diagrams from your request history or workflow executions. Export as SVG for documentation.</li>
+                    <li><strong>Data-Driven Runner:</strong> Upload CSV/JSON files to execute bulk requests. Automatically maps file columns to <code>{{variables}}</code> in your requests.</li>
+                    <li><strong>GraphQL Explorer:</strong> Dedicated editor for GraphQL queries and variables with schema introspection support to browse remote types and fields.</li>
+                    <li><strong>Contract Validation:</strong> Define a JSON Schema for your requests and validate responses automatically to ensure API consistency.</li>
+                </ul>
+            </div>
+        </section>
+
+        <footer style="margin-top: 60px; padding-bottom: 40px; text-align: center; color: var(--text-secondary); font-size: 12px;">
+            PostIt API Client &bull; Built for Developers
+        </footer>
+    </div>
+</body>
+</html>

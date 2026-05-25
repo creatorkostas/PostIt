@@ -525,9 +525,10 @@ func (s *Server) handleSQLRequest(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHammerRequest(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Path    string `json:"path"`
-		Workers int    `json:"workers"`
-		Seconds int    `json:"seconds"`
+		Path     string `json:"path"`
+		Workers  int    `json:"workers"`
+		Duration int    `json:"duration"`
+		Stream   bool   `json:"stream"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -555,7 +556,32 @@ func (s *Server) handleHammerRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := s.Client.Hammer(reqCopy, input.Workers, time.Duration(input.Seconds)*time.Second)
+	duration := time.Duration(input.Duration) * time.Second
+
+	if input.Stream {
+		// Streaming mode: flush progress as newline-delimited JSON every 500ms
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming not supported", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(http.StatusOK)
+
+		progressCh := make(chan *api.HammerProgress, 32)
+		go s.Client.HammerStream(reqCopy, input.Workers, duration, progressCh)
+
+		for p := range progressCh {
+			line, _ := json.Marshal(p)
+			w.Write(append(line, '\n'))
+			flusher.Flush()
+		}
+		return
+	}
+
+	results := s.Client.Hammer(reqCopy, input.Workers, duration)
 	json.NewEncoder(w).Encode(results)
 }
 
