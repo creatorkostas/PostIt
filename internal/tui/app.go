@@ -1,16 +1,26 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"postit/internal/api"
 	"postit/internal/models"
 	"postit/internal/processor"
 	"postit/internal/storage"
+	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
+
+type RequestPanel struct {
+	Main       *tview.Flex
+	Response   *tview.TextView
+	CurrentReq *models.RequestInfo
+	Title      string
+}
 
 type TUIApp struct {
 	App       *tview.Application
@@ -23,12 +33,11 @@ type TUIApp struct {
 	Cached     []models.RequestInfo
 
 	// Layout Components
-	Tree     *tview.TreeView
-	Response *tview.TextView
-	Main     *tview.Flex
-	Status   *tview.TextView
-
-	CurrentReq *models.RequestInfo
+	Tree       *tview.TreeView
+	LeftPanel  *RequestPanel
+	RightPanel *RequestPanel
+	ActivePanel *RequestPanel
+	Status     *tview.TextView
 }
 
 func NewTUIApp(store *storage.Manager, proc *processor.ScriptProcessor, client *api.Client) *TUIApp {
@@ -40,6 +49,45 @@ func NewTUIApp(store *storage.Manager, proc *processor.ScriptProcessor, client *
 	}
 }
 
+func (t *TUIApp) newRequestPanel(title string) *RequestPanel {
+	main := tview.NewFlex().SetDirection(tview.FlexRow)
+	main.SetBorder(true).SetTitle(title + " Request")
+	
+	resp := tview.NewTextView().
+		SetDynamicColors(true).
+		SetRegions(true).
+		SetWordWrap(true)
+	resp.SetBorder(true).SetTitle(title + " Response")
+	
+	return &RequestPanel{
+		Main:     main,
+		Response: resp,
+		Title:    title,
+	}
+}
+
+func (t *TUIApp) getMainLayout() tview.Primitive {
+	leftSide := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(t.LeftPanel.Main, 0, 1, false).
+		AddItem(t.LeftPanel.Response, 0, 1, false)
+
+	rightSide := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(t.RightPanel.Main, 0, 1, false).
+		AddItem(t.RightPanel.Response, 0, 1, false)
+
+	editors := tview.NewFlex().SetDirection(tview.FlexColumn).
+		AddItem(leftSide, 0, 1, false).
+		AddItem(rightSide, 0, 1, false)
+
+	mainContent := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(editors, 0, 1, false).
+		AddItem(t.Status, 1, 0, false)
+
+	return tview.NewFlex().
+		AddItem(t.Tree, 35, 1, true).
+		AddItem(mainContent, 0, 3, false)
+}
+
 func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.RequestInfo) error {
 	t.Collection = collection
 	t.Cached = cachedRequests
@@ -48,31 +96,17 @@ func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.Reque
 	t.Tree = tview.NewTreeView()
 	t.refreshTree()
 
-	// Response Area
-	t.Response = tview.NewTextView().
-		SetDynamicColors(true).
-		SetRegions(true).
-		SetWordWrap(true)
-	t.Response.SetBorder(true).SetTitle("Response Body (Ctrl+B to focus)")
+	// Initialize Panels
+	t.LeftPanel = t.newRequestPanel("Left")
+	t.RightPanel = t.newRequestPanel("Right")
+	t.ActivePanel = t.LeftPanel
 
 	// Status/Info Area
 	t.Status = tview.NewTextView().SetDynamicColors(true)
 	t.Status.SetBorder(false)
-	t.Status.SetText(" [yellow]Tab[white]: Switch | [yellow]Ctrl+R[white]: Send | [yellow]Ctrl+N[white]: New | [yellow]Ctrl+D[white]: Duplicate | [yellow]Ctrl+M[white]: Move | [yellow]Alt+Up/Down[white]: Reorder | [yellow]Ctrl+C[white]: Exit")
+	t.Status.SetText(" [yellow]Tab[white]: Cycle Focus | [yellow]Ctrl+P[white]: Command Palette | [yellow]Ctrl+R[white]: Send | [yellow]Ctrl+S[white]: Save | [yellow]Ctrl+C[white]: Exit")
 
-	// Main Request Area
-	t.Main = tview.NewFlex().SetDirection(tview.FlexRow)
-	t.Main.SetBorder(true).SetTitle("Request Details")
-
-	// Layout
-	rightSide := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(t.Main, 0, 1, false).
-		AddItem(t.Response, 0, 1, false).
-		AddItem(t.Status, 1, 0, false)
-
-	flex := tview.NewFlex().
-		AddItem(t.Tree, 35, 1, true).
-		AddItem(rightSide, 0, 3, false)
+	flex := t.getMainLayout()
 
 	// Selection Handler
 	t.Tree.SetSelectedFunc(func(node *tview.TreeNode) {
@@ -86,22 +120,42 @@ func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.Reque
 
 	// Global Keybindings
 	t.App.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyCtrlP {
+			t.showCommandPalette()
+			return nil
+		}
+
 		switch event.Key() {
 		case tcell.KeyCtrlR:
-			if t.CurrentReq != nil {
+			if t.ActivePanel.CurrentReq != nil {
 				t.sendRequest()
+			}
+			return nil
+		case tcell.KeyCtrlH:
+			if t.ActivePanel.CurrentReq != nil {
+				t.showHammer()
+			}
+			return nil
+		case tcell.KeyCtrlS:
+			if t.ActivePanel.CurrentReq != nil {
+				t.saveRequest()
+			}
+			return nil
+		case tcell.KeyCtrlQ:
+			if t.ActivePanel.CurrentReq != nil {
+				t.showSQLEditor()
 			}
 			return nil
 		case tcell.KeyCtrlN:
 			t.showNewRequestForm()
 			return nil
 		case tcell.KeyCtrlD:
-			if t.CurrentReq != nil {
+			if t.ActivePanel.CurrentReq != nil {
 				t.duplicateRequest()
 			}
 			return nil
 		case tcell.KeyCtrlM:
-			if t.CurrentReq != nil {
+			if t.ActivePanel.CurrentReq != nil {
 				t.showMoveRequestForm()
 			}
 			return nil
@@ -117,21 +171,48 @@ func (t *TUIApp) Run(collection models.Collection, cachedRequests []models.Reque
 			}
 		case tcell.KeyTab:
 			if t.Tree.HasFocus() {
-				t.App.SetFocus(t.Main)
-			} else if t.Main.HasFocus() {
-				t.App.SetFocus(t.Response)
-			} else {
-				t.App.SetFocus(t.Tree)
+				t.App.SetFocus(t.LeftPanel.Main)
+				t.ActivePanel = t.LeftPanel
+			} else if t.ActivePanel == t.LeftPanel {
+				if t.LeftPanel.Main.HasFocus() {
+					t.App.SetFocus(t.LeftPanel.Response)
+				} else {
+					t.App.SetFocus(t.RightPanel.Main)
+					t.ActivePanel = t.RightPanel
+				}
+			} else if t.ActivePanel == t.RightPanel {
+				if t.RightPanel.Main.HasFocus() {
+					t.App.SetFocus(t.RightPanel.Response)
+				} else {
+					t.App.SetFocus(t.Tree)
+				}
 			}
+			t.updatePanelBorders()
 			return nil
 		case tcell.KeyCtrlB:
-			t.App.SetFocus(t.Response)
+			t.App.SetFocus(t.ActivePanel.Response)
 			return nil
 		}
 		return event
 	})
 
+	t.updatePanelBorders()
 	return t.App.SetRoot(flex, true).Run()
+}
+
+func (t *TUIApp) updatePanelBorders() {
+	t.LeftPanel.Main.SetBorderColor(tcell.ColorWhite)
+	t.LeftPanel.Response.SetBorderColor(tcell.ColorWhite)
+	t.RightPanel.Main.SetBorderColor(tcell.ColorWhite)
+	t.RightPanel.Response.SetBorderColor(tcell.ColorWhite)
+
+	if t.ActivePanel == t.LeftPanel {
+		t.LeftPanel.Main.SetBorderColor(tcell.ColorYellow)
+		t.LeftPanel.Response.SetBorderColor(tcell.ColorYellow)
+	} else {
+		t.RightPanel.Main.SetBorderColor(tcell.ColorYellow)
+		t.RightPanel.Response.SetBorderColor(tcell.ColorYellow)
+	}
 }
 
 func (t *TUIApp) buildTree(parent *tview.TreeNode, items []models.Item, prefix string, cached []models.RequestInfo) {
@@ -171,9 +252,9 @@ func (t *TUIApp) buildTree(parent *tview.TreeNode, items []models.Item, prefix s
 }
 
 func (t *TUIApp) showRequest(req *models.RequestInfo) {
-	t.CurrentReq = req
-	t.Main.Clear()
-	t.Main.SetTitle(fmt.Sprintf(" %s ", req.Path))
+	t.ActivePanel.CurrentReq = req
+	t.ActivePanel.Main.Clear()
+	t.ActivePanel.Main.SetTitle(fmt.Sprintf(" %s (%s) ", req.Path, t.ActivePanel.Title))
 
 	view := tview.NewTextView().SetDynamicColors(true)
 	
@@ -189,33 +270,60 @@ func (t *TUIApp) showRequest(req *models.RequestInfo) {
 	}
 
 	fmt.Fprintf(view, "\n[yellow]BODY:\n")
-	if req.Request.Body == nil || (req.Request.Body.Raw == "" && len(req.Request.Body.Urlencoded) == 0) {
+	if req.Request.Body == nil || (req.Request.Body.Raw == "" && len(req.Request.Body.UrlEncoded) == 0) {
 		fmt.Fprintf(view, "  [gray]Empty\n")
 	} else if req.Request.Body.Mode == "raw" {
 		fmt.Fprintf(view, "[white]%s\n", req.Request.Body.Raw)
 	} else {
-		for _, f := range req.Request.Body.Urlencoded {
+		for _, f := range req.Request.Body.UrlEncoded {
 			fmt.Fprintf(view, "  [blue]%s:[white] %s\n", f.Key, f.Value)
 		}
 	}
 
-	t.Main.AddItem(view, 0, 1, true)
-	t.Response.SetText(" [gray]Press Ctrl+R to Send Request")
+	if req.SQLQuery != "" {
+		fmt.Fprintf(view, "\n[yellow]SQL SIDEKICK:\n")
+		fmt.Fprintf(view, "  [blue]Driver:[white] %s\n", req.SQLDriver)
+		fmt.Fprintf(view, "  [blue]DB Path:[white] %s\n", req.DBPath)
+		fmt.Fprintf(view, "  [blue]Query:[white] %s\n", req.SQLQuery)
+	}
+
+	t.ActivePanel.Main.AddItem(view, 0, 1, true)
+	t.ActivePanel.Response.SetText(" [gray]Press Ctrl+R to Send Request")
 }
 
 func (t *TUIApp) sendRequest() {
-	t.Response.SetText(" [yellow]Sending request...")
+	panel := t.ActivePanel
+	req := panel.CurrentReq
+	panel.Response.SetText(" [yellow]Sending request...")
+	
 	go func() {
-		// 1. Run Pre-request scripts
-		t.Processor.RunScripts(t.CurrentReq.Events, "prerequest", nil, nil, t.CurrentReq.Request.Header)
-		t.Processor.RunScripts(t.CurrentReq.Events, "test", nil, nil, t.CurrentReq.Request.Header)
+		// 1. Run Pre-request scripts only
+		t.Processor.RunScripts(req.Events, "prerequest", nil, nil, req.Request.Header)
+		// Note: "test" scripts should only run AFTER the request
 
 		// 2. Execute
-		body, headers, statusCode, statusText := t.Client.ExecuteRequest(t.CurrentReq.Request)
+		startTime := time.Now()
+		body, headers, statusCode, statusText := t.Client.ExecuteRequest(context.Background(), req.Request)
+		duration := time.Since(startTime).Milliseconds()
+		
+		// Record History
+		go func() {
+			t.Storage.AddHistoryRecord(models.HistoryRecord{
+				Timestamp:       startTime,
+				Path:            req.Path,
+				Method:          req.Request.Method,
+				URL:             t.Processor.ResolveVariables(req.Request.URL.Raw),
+				StatusCode:      statusCode,
+				StatusText:      statusText,
+				Duration:        duration,
+				ResponseBody:    body,
+				ResponseHeaders: headers,
+			})
+		}()
 		
 		t.App.QueueUpdateDraw(func() {
 			if statusCode == 0 {
-				t.Response.SetText(" [red]Failed to send request or no response received.")
+				panel.Response.SetText(" [red]Failed to send request or no response received.")
 				return
 			}
 
@@ -235,10 +343,33 @@ func (t *TUIApp) sendRequest() {
 				statusColor = "yellow"
 			}
 			
-			t.Response.SetText(fmt.Sprintf(" [yellow]Status: [%s]%d %s[white]\n\n%s", statusColor, statusCode, statusText, display))
+			respContent := fmt.Sprintf(" [yellow]Status: [%s]%d %s[white]\n\n%s", statusColor, statusCode, statusText, display)
 			
 			// 3. Run post-request scripts
-			t.Processor.RunScripts(t.CurrentReq.Events, "test", []byte(body), headers, t.CurrentReq.Request.Header)
+			t.Processor.RunScripts(req.Events, "test", []byte(body), headers, req.Request.Header)
+
+			// 4. SQL Sidekick
+			if req.SQLQuery != "" && req.DBPath != "" {
+				cols, rows, err := t.Client.ExecuteSQL(context.Background(), req.SQLDriver, req.DBPath, req.SQLQuery)
+				if err != nil {
+					respContent += fmt.Sprintf("\n\n [red]SQL Error: %v", err)
+				} else {
+					respContent += "\n\n [yellow]SQL Results:\n"
+					// Simple table view in text
+					for _, col := range cols {
+						respContent += fmt.Sprintf(" [blue]%-15s", col)
+					}
+					respContent += "[white]\n" + strings.Repeat("-", len(cols)*16) + "\n"
+					for _, row := range rows {
+						for _, val := range row {
+							respContent += fmt.Sprintf(" %-15s", val)
+						}
+						respContent += "\n"
+					}
+				}
+			}
+			
+			panel.Response.SetText(respContent)
 		})
 	}()
 }
@@ -281,20 +412,140 @@ func (t *TUIApp) markVisited(node *tview.TreeNode, visited map[string]bool) {
 	}
 }
 
+func (t *TUIApp) showCommandPalette() {
+	commands := []struct {
+		Name   string
+		Action func()
+	}{
+		{"> New Request", t.showNewRequestForm},
+		{"> Import cURL", t.showImportCurlForm},
+		{"> Run Hammer", t.showHammer},
+		{"> Switch Environment", t.showEnvironmentPicker},
+		{"> Clear History", t.clearHistory},
+	}
+
+	pages := tview.NewPages()
+	pages.AddPage("main", t.getMainLayout(), true, true)
+
+	list := tview.NewList().ShowSecondaryText(false)
+	for _, cmd := range commands {
+		c := cmd // closure
+		list.AddItem(c.Name, "", 0, func() {
+			pages.RemovePage("palette")
+			c.Action()
+		})
+	}
+
+	list.AddItem("Cancel", "", 'q', func() {
+		pages.RemovePage("palette")
+		t.App.SetFocus(t.Tree)
+	})
+
+	list.SetBorder(true).SetTitle(" Command Palette (Ctrl+P) ")
+
+	modal := tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(nil, 0, 1, false).
+			AddItem(list, 15, 1, true).
+			AddItem(nil, 0, 1, false), 50, 1, true).
+		AddItem(nil, 0, 1, false)
+
+	pages.AddPage("palette", modal, true, true)
+	t.App.SetRoot(pages, true).SetFocus(list)
+}
+
+func (t *TUIApp) showImportCurlForm() {
+	pages := tview.NewPages()
+	pages.AddPage("main", t.getMainLayout(), true, true)
+
+	form := tview.NewForm()
+	form.SetBorder(true).SetTitle(" Import cURL ").SetTitleAlign(tview.AlignLeft)
+
+	var curlStr string
+	form.AddTextArea("cURL Command", "", 60, 10, 0, func(text string) { curlStr = text })
+
+	form.AddButton("Import", func() {
+		if curlStr == "" {
+			return
+		}
+		req := processor.ParseCurl(curlStr)
+		newReq := models.RequestInfo{
+			Path:    "Imported > " + time.Now().Format("15:04:05"),
+			Request: req,
+			Order:   len(t.Cached),
+		}
+		t.Cached = append(t.Cached, newReq)
+		t.Storage.SaveSingleRequest(newReq)
+		t.Collection.Item = models.ReconstructItems(t.Cached)
+		t.refreshTree()
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+	})
+	form.AddButton("Cancel", func() {
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+	})
+
+	modal := tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(nil, 0, 1, false).
+			AddItem(form, 18, 1, true).
+			AddItem(nil, 0, 1, false), 70, 1, true).
+		AddItem(nil, 0, 1, false)
+
+	pages.AddPage("form", modal, true, true)
+	t.App.SetRoot(pages, true).SetFocus(form)
+}
+
+func (t *TUIApp) showEnvironmentPicker() {
+	envs := t.Storage.GetEnvironments()
+	if len(envs) == 0 {
+		t.ActivePanel.Response.SetText(" [red]No environments found.")
+		return
+	}
+
+	pages := tview.NewPages()
+	pages.AddPage("main", t.getMainLayout(), true, true)
+
+	list := tview.NewList().ShowSecondaryText(false)
+	for _, env := range envs {
+		e := env
+		list.AddItem(e.Name, "", 0, func() {
+			t.Storage.SetActiveEnvID(e.ID)
+			t.ActivePanel.Response.SetText(fmt.Sprintf(" [green]Switched to environment: %s", e.Name))
+			pages.RemovePage("picker")
+			t.App.SetFocus(t.Tree)
+		})
+	}
+	list.AddItem("Cancel", "", 'q', func() {
+		pages.RemovePage("picker")
+		t.App.SetFocus(t.Tree)
+	})
+
+	list.SetBorder(true).SetTitle(" Switch Environment ")
+
+	modal := tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(nil, 0, 1, false).
+			AddItem(list, 10, 1, true).
+			AddItem(nil, 0, 1, false), 40, 1, true).
+		AddItem(nil, 0, 1, false)
+
+	pages.AddPage("picker", modal, true, true)
+	t.App.SetRoot(pages, true).SetFocus(list)
+}
+
+func (t *TUIApp) clearHistory() {
+	t.Storage.SaveHistory([]models.HistoryRecord{})
+	t.ActivePanel.Response.SetText(" [green]History cleared.")
+}
+
 func (t *TUIApp) showNewRequestForm() {
 	pages := tview.NewPages()
-	
-	// Create the layout
-	rightSide := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(t.Main, 0, 1, false).
-		AddItem(t.Response, 0, 1, false).
-		AddItem(t.Status, 1, 0, false)
-
-	mainLayout := tview.NewFlex().
-		AddItem(t.Tree, 35, 1, true).
-		AddItem(rightSide, 0, 3, false)
-
-	pages.AddPage("main", mainLayout, true, true)
+	pages.AddPage("main", t.getMainLayout(), true, true)
 
 	form := tview.NewForm()
 	form.SetBorder(true).SetTitle(" New Request ").SetTitleAlign(tview.AlignLeft)
@@ -329,7 +580,6 @@ func (t *TUIApp) showNewRequestForm() {
 		t.App.SetFocus(t.Tree)
 	})
 
-	// Center the form
 	modal := tview.NewFlex().
 		AddItem(nil, 0, 1, false).
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
@@ -343,29 +593,19 @@ func (t *TUIApp) showNewRequestForm() {
 }
 
 func (t *TUIApp) duplicateRequest() {
-	if t.CurrentReq == nil {
+	req := t.ActivePanel.CurrentReq
+	if req == nil {
 		return
 	}
 
 	pages := tview.NewPages()
-	
-	// Create the layout
-	rightSide := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(t.Main, 0, 1, false).
-		AddItem(t.Response, 0, 1, false).
-		AddItem(t.Status, 1, 0, false)
-
-	mainLayout := tview.NewFlex().
-		AddItem(t.Tree, 35, 1, true).
-		AddItem(rightSide, 0, 3, false)
-
-	pages.AddPage("main", mainLayout, true, true)
+	pages.AddPage("main", t.getMainLayout(), true, true)
 
 	form := tview.NewForm()
 	form.SetBorder(true).SetTitle(" Duplicate Request ").SetTitleAlign(tview.AlignLeft)
 
 	var newPath string
-	newPath = t.CurrentReq.Path + " Copy"
+	newPath = req.Path + " Copy"
 	form.AddInputField("New Path", newPath, 60, nil, func(text string) { newPath = text })
 
 	form.AddButton("Duplicate", func() {
@@ -373,11 +613,10 @@ func (t *TUIApp) duplicateRequest() {
 			return
 		}
 		
-		// Clone events
 		var eventsCopy []models.Event
-		if t.CurrentReq.Events != nil {
-			eventsCopy = make([]models.Event, len(t.CurrentReq.Events))
-			for i, e := range t.CurrentReq.Events {
+		if req.Events != nil {
+			eventsCopy = make([]models.Event, len(req.Events))
+			for i, e := range req.Events {
 				eventsCopy[i] = e
 				if e.Script.Exec != nil {
 					eventsCopy[i].Script.Exec = make([]string, len(e.Script.Exec))
@@ -386,12 +625,18 @@ func (t *TUIApp) duplicateRequest() {
 			}
 		}
 
-		// Clone request
+		maxOrder := -1
+		for _, r := range t.Cached {
+			if r.Order > maxOrder {
+				maxOrder = r.Order
+			}
+		}
+
 		newReq := models.RequestInfo{
 			Path:    newPath,
-			Request: t.CurrentReq.Request.DeepCopy(),
+			Request: req.Request.DeepCopy(),
 			Events:  eventsCopy,
-			Order:   t.CurrentReq.Order + 1,
+			Order:   maxOrder + 1,
 		}
 		
 		t.Cached = append(t.Cached, newReq)
@@ -485,40 +730,29 @@ func (t *TUIApp) moveRequest(up bool) {
 }
 
 func (t *TUIApp) showMoveRequestForm() {
-	if t.CurrentReq == nil {
+	req := t.ActivePanel.CurrentReq
+	if req == nil {
 		return
 	}
 
 	pages := tview.NewPages()
-	
-	// Create the layout
-	rightSide := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(t.Main, 0, 1, false).
-		AddItem(t.Response, 0, 1, false).
-		AddItem(t.Status, 1, 0, false)
-
-	mainLayout := tview.NewFlex().
-		AddItem(t.Tree, 35, 1, true).
-		AddItem(rightSide, 0, 3, false)
-
-	pages.AddPage("main", mainLayout, true, true)
+	pages.AddPage("main", t.getMainLayout(), true, true)
 
 	form := tview.NewForm()
 	form.SetBorder(true).SetTitle(" Move Request ").SetTitleAlign(tview.AlignLeft)
 
 	var newPath string
-	newPath = t.CurrentReq.Path
+	newPath = req.Path
 	form.AddInputField("New Path (e.g. Folder > Name)", newPath, 60, nil, func(text string) { newPath = text })
 
 	form.AddButton("Move", func() {
-		if newPath == "" || newPath == t.CurrentReq.Path {
+		if newPath == "" || newPath == req.Path {
 			return
 		}
 		
-		oldPath := t.CurrentReq.Path
-		t.CurrentReq.Path = newPath
+		oldPath := req.Path
+		req.Path = newPath
 		
-		// Update in cache
 		for i := range t.Cached {
 			if t.Cached[i].Path == oldPath {
 				t.Cached[i].Path = newPath
@@ -526,7 +760,7 @@ func (t *TUIApp) showMoveRequestForm() {
 			}
 		}
 
-		t.Storage.SaveSingleRequest(*t.CurrentReq)
+		t.Storage.SaveSingleRequest(*req)
 		
 		t.Collection.Item = models.ReconstructItems(t.Cached)
 		t.refreshTree()
@@ -577,4 +811,129 @@ func (t *TUIApp) selectByPath(root *tview.TreeNode, path string) bool {
 		}
 	}
 	return false
+}
+
+func (t *TUIApp) showHammer() {
+	req := t.ActivePanel.CurrentReq
+	if req == nil {
+		return
+	}
+
+	pages := tview.NewPages()
+	pages.AddPage("main", t.getMainLayout(), true, true)
+
+	form := tview.NewForm()
+	form.SetBorder(true).SetTitle(" Hammer (Load Testing) ").SetTitleAlign(tview.AlignLeft)
+
+	var workers int = 10
+	var duration int = 5 // seconds
+	form.AddInputField("Workers", "10", 10, tview.InputFieldInteger, func(text string) {
+		fmt.Sscanf(text, "%d", &workers)
+	})
+	form.AddInputField("Duration (sec)", "5", 10, tview.InputFieldInteger, func(text string) {
+		fmt.Sscanf(text, "%d", &duration)
+	})
+
+	form.AddButton("Start Hammering", func() {
+		t.ActivePanel.Response.SetText(" [yellow]Hammering in progress...")
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+
+		go func() {
+			results := t.Client.Hammer(req.Request, workers, time.Duration(duration)*time.Second)
+			
+			t.App.QueueUpdateDraw(func() {
+				resText := fmt.Sprintf(" [yellow]Hammer Results for %s[white]\n\n", req.Path)
+		resText += fmt.Sprintf(" [blue]Total Requests:[white] %d\n", results.TotalRequests)
+			var successRate float64
+			if results.TotalRequests > 0 {
+				successRate = float64(results.SuccessCount) / float64(results.TotalRequests) * 100
+			}
+			resText += fmt.Sprintf(" [green]Success Rate: [white] %.2f%%\n", successRate)
+				resText += fmt.Sprintf(" [yellow]RPS:           [white] %.2f\n", results.RPS)
+				resText += fmt.Sprintf(" [blue]Avg Latency:   [white] %v\n\n", results.AverageLatency)
+				
+				resText += " [yellow]Status Codes:\n"
+				for code, count := range results.StatusCodes {
+					color := "green"
+					if code >= 400 { color = "red" }
+					resText += fmt.Sprintf("   [%s]%d:[white] %d\n", color, code, count)
+				}
+				
+				t.ActivePanel.Response.SetText(resText)
+			})
+		}()
+	})
+	
+	form.AddButton("Cancel", func() {
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+	})
+
+	modal := tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(nil, 0, 1, false).
+			AddItem(form, 12, 1, true).
+			AddItem(nil, 0, 1, false), 50, 1, true).
+		AddItem(nil, 0, 1, false)
+
+	pages.AddPage("form", modal, true, true)
+	t.App.SetRoot(pages, true).SetFocus(form)
+}
+
+func (t *TUIApp) showSQLEditor() {
+	req := t.ActivePanel.CurrentReq
+	if req == nil {
+		return
+	}
+
+	pages := tview.NewPages()
+	pages.AddPage("main", t.getMainLayout(), true, true)
+
+	form := tview.NewForm()
+	form.SetBorder(true).SetTitle(" SQL Sidekick ").SetTitleAlign(tview.AlignLeft)
+
+	form.AddDropDown("Driver", []string{"sqlite", "postgres", "mysql"}, 0, func(option string, optionIndex int) {
+		req.SQLDriver = option
+	})
+	form.AddInputField("DB Path (SQLite/Postgres/MySQL)", req.DBPath, 60, nil, func(text string) {
+		req.DBPath = text
+	})
+	form.AddInputField("SQL Query", req.SQLQuery, 60, nil, func(text string) {
+		req.SQLQuery = text
+	})
+
+	form.AddButton("Save", func() {
+		t.Storage.SaveSingleRequest(*req)
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+		t.showRequest(req) // Refresh view
+	})
+	
+	form.AddButton("Cancel", func() {
+		pages.RemovePage("form")
+		t.App.SetFocus(t.Tree)
+	})
+
+	modal := tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(nil, 0, 1, false).
+			AddItem(form, 12, 1, true).
+			AddItem(nil, 0, 1, false), 70, 1, true).
+		AddItem(nil, 0, 1, false)
+
+	pages.AddPage("form", modal, true, true)
+	t.App.SetRoot(pages, true).SetFocus(form)
+}
+
+func (t *TUIApp) saveRequest() {
+	req := t.ActivePanel.CurrentReq
+	if req == nil {
+		return
+	}
+
+	t.Storage.SaveSingleRequest(*req)
+	t.ActivePanel.Response.SetText(fmt.Sprintf(" [green]Request saved: %s", req.Path))
 }
