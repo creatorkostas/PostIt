@@ -242,6 +242,7 @@
             document.getElementById('history-actions').style.display = tab === 'history' ? 'block' : 'none';
             document.getElementById('ws-container').style.display = tab === 'ws' ? 'flex' : 'none';
             document.getElementById('mock-dashboard').style.display = tab === 'mock' ? 'block' : 'none';
+            document.getElementById('kafka-container').style.display = tab === 'kafka' ? 'flex' : 'none';
             
             document.getElementById('sidebar-title').textContent = tab.toUpperCase();
             
@@ -255,6 +256,7 @@
             if (tab === 'collections') init();
             if (tab === 'mock') renderMockStats();
             if (tab === 'ws') renderWS();
+            if (tab === 'kafka') renderKafka();
             lucide.createIcons();
         }
 
@@ -328,6 +330,7 @@
         }
 
         let wsPoll = null;
+        let kafkaPoll = null;
         function renderWS() {
             const area = document.getElementById('ws-message-area');
             area.style.display = 'flex';
@@ -367,6 +370,278 @@
             await fetch('/api/ws/close', { method: 'POST' });
             document.getElementById('ws-connect-btn').style.display = 'inline-block';
             document.getElementById('ws-disconnect-btn').style.display = 'none';
+        }
+
+        // ==================== KAFKA ====================
+
+        async function renderKafka() {
+            await kafkaLoadConfigs();
+            await kafkaUpdateStatus();
+            if (!kafkaPoll) kafkaPoll = setInterval(kafkaUpdateStatus, 5000);
+        }
+
+        async function kafkaUpdateStatus() {
+            try {
+                const resp = await fetch('/api/kafka/status');
+                const data = await resp.json();
+                const connected = data.connected;
+                const dot = document.getElementById('kafka-status-dot');
+                const text = document.getElementById('kafka-status-text');
+                const paneDot = document.getElementById('kafka-pane-status-dot');
+                const paneText = document.getElementById('kafka-pane-status-text');
+                const connectBtn = document.getElementById('kafka-connect-btn');
+                const disconnectBtn = document.getElementById('kafka-disconnect-btn');
+                const topicSec = document.getElementById('kafka-topic-list');
+                if (connected) {
+                    dot.style.background = '#4ade80';
+                    text.textContent = 'Connected';
+                    if (paneDot) paneDot.style.background = '#4ade80';
+                    if (paneText) paneText.textContent = 'Connected - ready to send messages';
+                    connectBtn.style.display = 'none';
+                    disconnectBtn.style.display = 'inline-block';
+                    topicSec.style.display = 'block';
+                    kafkaLoadTopics();
+                } else {
+                    dot.style.background = '#666';
+                    text.textContent = 'Disconnected';
+                    if (paneDot) paneDot.style.background = '#666';
+                    if (paneText) paneText.textContent = 'Connect via sidebar to send messages';
+                    connectBtn.style.display = 'inline-block';
+                    disconnectBtn.style.display = 'none';
+                    topicSec.style.display = 'none';
+                }
+            } catch (e) { /* server may not be ready */ }
+        }
+
+        function kafkaGetConfig() {
+            const brokers = document.getElementById('kafka-brokers').value.split(',').map(s => s.trim()).filter(Boolean);
+            const saslEnabled = document.getElementById('kafka-sasl-enabled').checked;
+            const config = {
+                brokers: brokers,
+                clientId: document.getElementById('kafka-client-id').value || 'postit',
+                tls: {
+                    enabled: document.getElementById('kafka-tls-enabled').checked,
+                    insecureSkipVerify: document.getElementById('kafka-tls-skip').checked
+                },
+                sasl: saslEnabled ? {
+                    mechanism: document.getElementById('kafka-sasl-mechanism').value,
+                    username: document.getElementById('kafka-sasl-username').value,
+                    password: document.getElementById('kafka-sasl-password').value
+                } : null,
+                compression: document.getElementById('kafka-compression').value,
+                requiredAcks: document.getElementById('kafka-acks').value,
+                batchSize: parseInt(document.getElementById('kafka-batch-size').value) || 0,
+                batchTimeoutMs: parseInt(document.getElementById('kafka-batch-timeout').value) || 0,
+                timeoutSec: parseInt(document.getElementById('kafka-timeout').value) || 10
+            };
+            return config;
+        }
+
+        function kafkaSetConfig(config) {
+            document.getElementById('kafka-brokers').value = (config.brokers || []).join(',');
+            document.getElementById('kafka-client-id').value = config.clientId || 'postit';
+            document.getElementById('kafka-tls-enabled').checked = config.tls && config.tls.enabled;
+            document.getElementById('kafka-tls-skip').checked = config.tls && config.tls.insecureSkipVerify;
+            kafkaToggleTLS();
+            const saslEnabled = config.sasl && config.sasl.mechanism;
+            document.getElementById('kafka-sasl-enabled').checked = !!saslEnabled;
+            kafkaToggleSASL();
+            if (saslEnabled) {
+                document.getElementById('kafka-sasl-mechanism').value = config.sasl.mechanism;
+                document.getElementById('kafka-sasl-username').value = config.sasl.username || '';
+                document.getElementById('kafka-sasl-password').value = config.sasl.password || '';
+            }
+            document.getElementById('kafka-compression').value = config.compression || 'none';
+            document.getElementById('kafka-acks').value = config.requiredAcks || '1';
+            document.getElementById('kafka-batch-size').value = config.batchSize || 0;
+            document.getElementById('kafka-batch-timeout').value = config.batchTimeoutMs || 0;
+            document.getElementById('kafka-timeout').value = config.timeoutSec || 10;
+        }
+
+        function kafkaToggleTLS() {
+            const enabled = document.getElementById('kafka-tls-enabled').checked;
+            document.getElementById('kafka-tls-skip-label').style.display = enabled ? 'inline-flex' : 'none';
+        }
+
+        function kafkaToggleSASL() {
+            const enabled = document.getElementById('kafka-sasl-enabled').checked;
+            document.getElementById('kafka-sasl-fields').style.display = enabled ? 'block' : 'none';
+        }
+
+        async function kafkaSaveConfig() {
+            const name = document.getElementById('kafka-config-name').value.trim();
+            if (!name) { showToast('Enter a config name', 'error'); return; }
+            const config = kafkaGetConfig();
+            const id = name.toLowerCase().replace(/\s+/g, '-');
+            const body = { id, name, config };
+            try {
+                const resp = await fetch('/api/kafka/configs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (!resp.ok) throw new Error(await resp.text());
+                showToast('Config saved!', 'success');
+                await kafkaLoadConfigs();
+                document.getElementById('kafka-config-select').value = id;
+            } catch (e) { showToast('Failed to save: ' + e.message, 'error'); }
+        }
+
+        async function kafkaLoadConfigs() {
+            try {
+                const resp = await fetch('/api/kafka/configs');
+                const configs = await resp.json();
+                const select = document.getElementById('kafka-config-select');
+                const currentVal = select.value;
+                select.innerHTML = '<option value="">-- Select Config --</option>';
+                configs.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name;
+                    select.appendChild(opt);
+                });
+                if (currentVal && [...select.options].some(o => o.value === currentVal)) {
+                    select.value = currentVal;
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        function kafkaLoadConfig() {
+            const id = document.getElementById('kafka-config-select').value;
+            if (!id) return;
+            // Fetch all configs and find the matching one
+            fetch('/api/kafka/configs').then(r => r.json()).then(configs => {
+                const cfg = configs.find(c => c.id === id);
+                if (cfg) {
+                    document.getElementById('kafka-config-name').value = cfg.name;
+                    kafkaSetConfig(cfg.config);
+                }
+            }).catch(() => {});
+        }
+
+        async function kafkaDeleteConfig() {
+            const id = document.getElementById('kafka-config-select').value;
+            if (!id) { showToast('Select a config first', 'error'); return; }
+            if (!confirm('Delete this config?')) return;
+            try {
+                const resp = await fetch('/api/kafka/configs?id=' + encodeURIComponent(id), { method: 'DELETE' });
+                if (!resp.ok) throw new Error(await resp.text());
+                showToast('Config deleted', 'success');
+                document.getElementById('kafka-config-name').value = '';
+                await kafkaLoadConfigs();
+            } catch (e) { showToast('Failed to delete: ' + e.message, 'error'); }
+        }
+
+        async function kafkaConnect() {
+            const config = kafkaGetConfig();
+            if (!config.brokers.length) { showToast('Enter at least one broker', 'error'); return; }
+            try {
+                const resp = await fetch('/api/kafka/connect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ config })
+                });
+                if (!resp.ok) throw new Error(await resp.text());
+                showToast('Kafka Connected!', 'success');
+                await kafkaUpdateStatus();
+                kafkaLoadTopics();
+            } catch (e) { showToast('Connection failed: ' + e.message, 'error'); }
+        }
+
+        async function kafkaDisconnect() {
+            try {
+                await fetch('/api/kafka/disconnect', { method: 'POST' });
+                showToast('Disconnected', 'info');
+                await kafkaUpdateStatus();
+            } catch (e) { showToast('Failed to disconnect', 'error'); }
+        }
+
+        async function kafkaLoadTopics() {
+            const brokers = document.getElementById('kafka-brokers').value;
+            if (!brokers) return;
+            try {
+                const resp = await fetch('/api/kafka/topics?brokers=' + encodeURIComponent(brokers));
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const topics = data.topics || [];
+                const topicsDiv = document.getElementById('kafka-topics');
+                topicsDiv.innerHTML = topics.length === 0 ? '<span style="font-style:italic;">No topics found</span>' : '';
+                topics.forEach(t => {
+                    const tag = document.createElement('span');
+                    tag.className = 'kafka-topic-tag';
+                    tag.textContent = t;
+                    tag.onclick = () => { document.getElementById('kafka-send-topic').value = t; };
+                    topicsDiv.appendChild(tag);
+                });
+                // Populate topic selector in send pane
+                const topicSelect = document.getElementById('kafka-send-topic');
+                const currentTopic = topicSelect.value;
+                topicSelect.innerHTML = '<option value="">-- Select Topic --</option>';
+                topics.forEach(t => {
+                    const opt = document.createElement('option');
+                    opt.value = t;
+                    opt.textContent = t;
+                    topicSelect.appendChild(opt);
+                });
+                if (currentTopic && [...topicSelect.options].some(o => o.value === currentTopic)) {
+                    topicSelect.value = currentTopic;
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        function kafkaAddHeaderRow() {
+            const list = document.getElementById('kafka-headers-list');
+            const row = document.createElement('div');
+            row.className = 'kafka-header-row';
+            row.style.cssText = 'display:flex; gap:8px; margin-bottom:6px; align-items:center;';
+            row.innerHTML = `
+                <input type="text" class="kafka-header-key" placeholder="Key" style="flex:1; background:var(--bg-input); border:1px solid var(--border-color); color:white; padding:6px 8px; border-radius:var(--radius); outline:none; font-size:11px;">
+                <input type="text" class="kafka-header-value" placeholder="Value" style="flex:1; background:var(--bg-input); border:1px solid var(--border-color); color:white; padding:6px 8px; border-radius:var(--radius); outline:none; font-size:11px;">
+                <button class="sidebar-action-btn" onclick="this.parentElement.remove()"><i data-lucide="x" style="width:12px;"></i></button>
+            `;
+            list.appendChild(row);
+            lucide.createIcons();
+        }
+
+        async function kafkaSendMessage() {
+            const topic = document.getElementById('kafka-send-topic').value;
+            const key = document.getElementById('kafka-send-key').value;
+            const value = document.getElementById('kafka-send-value').value;
+            const partition = parseInt(document.getElementById('kafka-send-partition').value) || -1;
+            if (!topic) { showToast('Select a topic', 'error'); return; }
+            if (!value && !key) { showToast('Enter a message value or key', 'error'); return; }
+
+            // Collect headers
+            const headers = {};
+            document.querySelectorAll('.kafka-header-row').forEach(row => {
+                const k = row.querySelector('.kafka-header-key').value.trim();
+                const v = row.querySelector('.kafka-header-value').value.trim();
+                if (k) headers[k] = v;
+            });
+
+            const resultsDiv = document.getElementById('kafka-send-results');
+            resultsDiv.textContent = 'Sending...';
+
+            try {
+                const resp = await fetch('/api/kafka/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic, key, value, partition, headers })
+                });
+                if (!resp.ok) throw new Error(await resp.text());
+                const result = await resp.json();
+                resultsDiv.innerHTML = `
+                    <div style="color:#4ade80; margin-bottom:8px;">✓ Message sent successfully</div>
+                    <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                        <tr style="border-bottom:1px solid var(--border-color);"><td style="padding:6px; color:var(--text-secondary);">Topic</td><td style="padding:6px;">${result.topic}</td></tr>
+                        <tr style="border-bottom:1px solid var(--border-color);"><td style="padding:6px; color:var(--text-secondary);">Partition</td><td style="padding:6px;">${result.partition}</td></tr>
+                        <tr style="border-bottom:1px solid var(--border-color);"><td style="padding:6px; color:var(--text-secondary);">Offset</td><td style="padding:6px;">${result.offset}</td></tr>
+                        ${result.error ? `<tr><td style="padding:6px; color:var(--text-secondary);">Error</td><td style="padding:6px; color:#f87171;">${result.error}</td></tr>` : ''}
+                    </table>
+                `;
+            } catch (e) {
+                resultsDiv.innerHTML = `<div style="color:#f87171;">✗ Failed: ${e.message}</div>`;
+            }
         }
 
         let historyCache = [];

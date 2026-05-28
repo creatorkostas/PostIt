@@ -41,12 +41,14 @@ type Manager struct {
 	Environments  []models.Environment
 	Workflows     []models.Workflow
 	ActiveEnvID   string
+	KafkaConnections []models.KafkaConnection
 
 	Logger *log.Logger
 	varMu  sync.RWMutex
 	historyMu sync.RWMutex
 	dataMu    sync.RWMutex // For Environments and GlobalHeaders
 	workflowMu sync.RWMutex // For Workflows
+	kafkaMu   sync.RWMutex // For KafkaConnections
 	vaultKey []byte
 
 	// Active environment cache for O(1) variable lookups
@@ -65,7 +67,8 @@ func NewManager(base string) *Manager {
 		HistoryPath: filepath.Join(base, "history.json"),
 		WorkflowsPath: filepath.Join(base, "workflows.json"),
 		VariableMap: make(map[string]string),
-		Workflows: []models.Workflow{},
+		Workflows:        []models.Workflow{},
+		KafkaConnections: []models.KafkaConnection{},
 		Logger: log.Default(),
 		activeEnvCache: make(map[string]string),
 	}
@@ -79,6 +82,9 @@ func (m *Manager) Init() error {
 	m.LoadActiveEnv()
 	if err := m.LoadWorkflows(); err != nil {
 		m.Logger.Errorf("Failed to load workflows: %v", err)
+	}
+	if err := m.LoadKafkaConnections(); err != nil {
+		m.Logger.Errorf("Failed to load kafka connections: %v", err)
 	}
 	return nil
 }
@@ -711,4 +717,69 @@ func (m *Manager) saveWorkflowsToFile() error {
 		return err
 	}
 	return m.atomicWriteFile(m.WorkflowsPath, data)
+}
+
+// --- Kafka Connections ---
+
+func (m *Manager) GetKafkaConnections() []models.KafkaConnection {
+	m.kafkaMu.RLock()
+	defer m.kafkaMu.RUnlock()
+	res := make([]models.KafkaConnection, len(m.KafkaConnections))
+	copy(res, m.KafkaConnections)
+	return res
+}
+
+func (m *Manager) SaveKafkaConnections(conns []models.KafkaConnection) error {
+	m.kafkaMu.Lock()
+	m.KafkaConnections = conns
+	m.kafkaMu.Unlock()
+
+	path := filepath.Join(m.BaseDir, "kafka_connections.json")
+	data, err := json.MarshalIndent(conns, "", "  ")
+	if err != nil {
+		return err
+	}
+	return m.atomicWriteFile(path, data)
+}
+
+func (m *Manager) LoadKafkaConnections() error {
+	path := filepath.Join(m.BaseDir, "kafka_connections.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return &StorageError{Op: "Read", Path: path, Err: err}
+	}
+	m.kafkaMu.Lock()
+	defer m.kafkaMu.Unlock()
+	return json.Unmarshal(data, &m.KafkaConnections)
+}
+
+func (m *Manager) AddKafkaConnection(conn models.KafkaConnection) error {
+	conns := m.GetKafkaConnections()
+	// Update if exists, append if new
+	found := false
+	for i, c := range conns {
+		if c.ID == conn.ID {
+			conns[i] = conn
+			found = true
+			break
+		}
+	}
+	if !found {
+		conns = append(conns, conn)
+	}
+	return m.SaveKafkaConnections(conns)
+}
+
+func (m *Manager) DeleteKafkaConnection(id string) error {
+	conns := m.GetKafkaConnections()
+	updated := make([]models.KafkaConnection, 0, len(conns))
+	for _, c := range conns {
+		if c.ID != id {
+			updated = append(updated, c)
+		}
+	}
+	return m.SaveKafkaConnections(updated)
 }
