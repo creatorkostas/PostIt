@@ -40,6 +40,9 @@ type Server struct {
 	// WebSocket
 	WSClient *api.WSClient
 
+	// Kafka
+	Kafka *api.KafkaProducer
+
 	stateMu  sync.RWMutex
 }
 
@@ -55,6 +58,7 @@ func NewServer(store *storage.Manager, proc *processor.ScriptProcessor, client *
 		EnableMock: enableMock,
 		mockStats:  make(map[string]*models.MockStat),
 		WSClient:   api.NewWSClient(),
+		Kafka:      api.NewKafkaProducer(),
 		fuzzer:     api.NewFuzzer(),
 		runner:     api.NewRunner(client, store, proc),
 	}
@@ -167,6 +171,15 @@ func (s *Server) Start(ctx context.Context, port int) error {
 	http.HandleFunc("/api/proxy/start", s.recoveryMiddleware(s.csrfMiddleware(s.handleProxyStart)))
 	http.HandleFunc("/api/proxy/stop", s.recoveryMiddleware(s.csrfMiddleware(s.handleProxyStop)))
 	http.HandleFunc("/api/proxy/status", s.recoveryMiddleware(s.csrfMiddleware(s.handleProxyStatus)))
+
+	// ── Kafka ───────────────────────────────────────────────────────────────────
+	http.HandleFunc("/api/kafka/connect", s.recoveryMiddleware(s.csrfMiddleware(s.handleKafkaConnect)))
+	http.HandleFunc("/api/kafka/send", s.recoveryMiddleware(s.csrfMiddleware(s.handleKafkaSend)))
+	http.HandleFunc("/api/kafka/topics", s.recoveryMiddleware(s.csrfMiddleware(s.handleKafkaTopics)))
+	http.HandleFunc("/api/kafka/topics/", s.recoveryMiddleware(s.csrfMiddleware(s.handleKafkaTopicMeta)))
+	http.HandleFunc("/api/kafka/status", s.recoveryMiddleware(s.csrfMiddleware(s.handleKafkaStatus)))
+	http.HandleFunc("/api/kafka/disconnect", s.recoveryMiddleware(s.csrfMiddleware(s.handleKafkaDisconnect)))
+	http.HandleFunc("/api/kafka/configs", s.recoveryMiddleware(s.csrfMiddleware(s.handleKafkaConfigs)))
 	
 	if s.EnableMock {
 		http.HandleFunc("/mock/", s.handleMockRequest)
@@ -1736,6 +1749,193 @@ func generateOpenAPIDocs(w http.ResponseWriter, collectionName string, requests 
 	}
 
 	json.NewEncoder(w).Encode(openAPI)
+}
+
+// ─── Kafka Handlers ─────────────────────────────────────────────────────────
+
+func (s *Server) handleKafkaConnect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var input struct {
+		Config models.KafkaConfig `json:"config"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Apply defaults for zero values
+	if input.Config.ClientID == "" {
+		input.Config.ClientID = "postit"
+	}
+	if input.Config.TimeoutSec <= 0 {
+		input.Config.TimeoutSec = 10
+	}
+
+	err := s.Kafka.Connect(input.Config)
+	if err != nil {
+		http.Error(w, "Failed to connect: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"connected": true,
+		"brokers":   input.Config.Brokers,
+	})
+}
+
+func (s *Server) handleKafkaSend(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var msg models.KafkaMessage
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if msg.Topic == "" {
+		http.Error(w, "topic is required", http.StatusBadRequest)
+		return
+	}
+	if msg.Value == "" && msg.Key == "" {
+		http.Error(w, "value or key is required", http.StatusBadRequest)
+		return
+	}
+
+	result, err := s.Kafka.SendMessage(r.Context(), msg)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) handleKafkaTopics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse brokers from query param: ?brokers=host1:9092,host2:9092
+	brokersParam := r.URL.Query().Get("brokers")
+	if brokersParam == "" {
+		http.Error(w, "brokers query parameter is required (comma-separated)", http.StatusBadRequest)
+		return
+	}
+	brokers := strings.Split(brokersParam, ",")
+
+	cfg := api.KafkaConfigDefaults()
+	cfg.Brokers = brokers
+
+	topics, err := s.Kafka.GetTopics(r.Context(), cfg)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"topics": topics,
+	})
+}
+
+func (s *Server) handleKafkaTopicMeta(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract topic from path: /api/kafka/topics/{topic}
+	topic := strings.TrimPrefix(r.URL.Path, "/api/kafka/topics/")
+	if topic == "" {
+		http.Error(w, "topic is required in path", http.StatusBadRequest)
+		return
+	}
+
+	brokersParam := r.URL.Query().Get("brokers")
+	if brokersParam == "" {
+		http.Error(w, "brokers query parameter is required (comma-separated)", http.StatusBadRequest)
+		return
+	}
+	brokers := strings.Split(brokersParam, ",")
+
+	cfg := api.KafkaConfigDefaults()
+	cfg.Brokers = brokers
+
+	partitions, err := s.Kafka.GetTopicMetadata(r.Context(), cfg, topic)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"topic":      topic,
+		"partitions": partitions,
+	})
+}
+
+func (s *Server) handleKafkaStatus(w http.ResponseWriter, r *http.Request) {
+	connected := s.Kafka.IsConnected()
+	json.NewEncoder(w).Encode(map[string]bool{
+		"connected": connected,
+	})
+}
+
+func (s *Server) handleKafkaDisconnect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.Kafka.Close()
+	json.NewEncoder(w).Encode(map[string]bool{"connected": false})
+}
+
+func (s *Server) handleKafkaConfigs(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		conns := s.Storage.GetKafkaConnections()
+		json.NewEncoder(w).Encode(conns)
+
+	case http.MethodPost:
+		var conn models.KafkaConnection
+		if err := json.NewDecoder(r.Body).Decode(&conn); err != nil {
+			http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if conn.ID == "" {
+			http.Error(w, "id is required", http.StatusBadRequest)
+			return
+		}
+		if err := s.Storage.AddKafkaConnection(conn); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(conn)
+
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "id query parameter is required", http.StatusBadRequest)
+			return
+		}
+		if err := s.Storage.DeleteKafkaConnection(id); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]bool{"deleted": true})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // handleExportCollection exports a collection or folder in Postman format

@@ -401,3 +401,21 @@ textarea#req-prerequest-input, textarea#req-tests-input, textarea#req-note-input
         .context-menu-item:hover { background: var(--bg-item-hover); color: var(--accent); }
         .context-menu-item.danger { color: var(--method-delete); }
         .context-menu-item.danger:hover { background: rgba(248, 113, 113, 0.1); }
+
+        /* Kafka Topic Tags */
+        .kafka-topic-tag {
+            display: inline-block;
+            padding: 4px 10px;
+            margin: 4px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            font-size: 11px;
+            color: var(--accent);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        .kafka-topic-tag:hover {
+            background: var(--bg-item-active);
+            border-color: var(--accent);
+        }

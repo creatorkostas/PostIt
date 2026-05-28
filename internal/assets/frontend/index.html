@@ -35,6 +35,7 @@
             <div id="tab-workflows" class="tab" onclick="switchSidebar('workflows')"><i data-lucide="git-branch"></i> WORKFLOWS</div>
             <div id="tab-ws" class="tab" onclick="switchSidebar('ws')"><i data-lucide="zap"></i> WS</div>
             <div id="tab-mock" class="tab" onclick="switchSidebar('mock')"><i data-lucide="bar-chart-2"></i> MOCK</div>
+            <div id="tab-kafka" class="tab" onclick="switchSidebar('kafka')"><i data-lucide="message-circle"></i> KAFKA</div>
         </div>
         <div id="sidebar-header">
             <span id="sidebar-title">COLLECTIONS</span>
@@ -61,6 +62,75 @@
         <div id="mock-dashboard" style="display: none; padding: 16px; flex: 1; overflow-y: auto;">
             <div style="font-size: 14px; font-weight: 700; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 8px;"><i data-lucide="bar-chart-2"></i> Mock Server Stats</div>
             <div id="mock-stats-list"></div>
+        </div>
+        <div id="kafka-container" style="display: none; padding: 16px; flex: 1; flex-direction: column; overflow-y: auto;">
+            <div style="font-size: 14px; font-weight: 700; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 8px;"><i data-lucide="message-circle"></i> Kafka Producer</div>
+            <div id="kafka-status" style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                <span id="kafka-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #666; display: inline-block;"></span>
+                <span id="kafka-status-text">Disconnected</span>
+            </div>
+            <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                <button class="btn-primary" id="kafka-connect-btn" onclick="kafkaConnect()">Connect</button>
+                <button class="btn-secondary" id="kafka-disconnect-btn" onclick="kafkaDisconnect()" style="display: none;">Disconnect</button>
+            </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label>Saved Config</label>
+                <div style="display: flex; gap: 8px;">
+                    <select id="kafka-config-select" style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 8px; border-radius: var(--radius); outline: none;" onchange="kafkaLoadConfig()">
+                        <option value="">-- Select Config --</option>
+                    </select>
+                    <button class="sidebar-action-btn" onclick="kafkaDeleteConfig()" title="Delete Config"><i data-lucide="trash-2" style="width: 14px;"></i></button>
+                </div>
+            </div>
+            <div class="form-group"><label>Config Name</label><input type="text" id="kafka-config-name" placeholder="My Cluster"></div>
+            <div class="form-group"><label>Brokers (comma separated)</label><input type="text" id="kafka-brokers" value="localhost:9092" placeholder="host1:9092,host2:9092"></div>
+            <div class="form-group"><label>Client ID</label><input type="text" id="kafka-client-id" value="postit"></div>
+            <div class="form-group" style="display: flex; gap: 16px; align-items: flex-start;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;"><input type="checkbox" id="kafka-tls-enabled" onchange="kafkaToggleTLS()"> TLS</label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; display: none;" id="kafka-tls-skip-label"><input type="checkbox" id="kafka-tls-skip"> Skip Verify</label>
+            </div>
+            <div class="form-group" id="kafka-sasl-group" style="border: 1px solid var(--border-color); border-radius: var(--radius); padding: 12px;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer; margin-bottom: 8px;"><input type="checkbox" id="kafka-sasl-enabled" onchange="kafkaToggleSASL()"> SASL Auth</label>
+                <div id="kafka-sasl-fields" style="display: none;">
+                    <div class="form-group"><label>Mechanism</label>
+                        <select id="kafka-sasl-mechanism" style="width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 8px; border-radius: var(--radius); outline: none;">
+                            <option value="plain">PLAIN</option>
+                            <option value="scram-sha-256">SCRAM-SHA-256</option>
+                            <option value="scram-sha-512">SCRAM-SHA-512</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>Username</label><input type="text" id="kafka-sasl-username"></div>
+                    <div class="form-group"><label>Password</label><input type="password" id="kafka-sasl-password"></div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                <div class="form-group" style="flex: 1; margin-bottom: 0;"><label>Compression</label>
+                    <select id="kafka-compression" style="width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 8px; border-radius: var(--radius); outline: none;">
+                        <option value="none">None</option>
+                        <option value="gzip">GZip</option>
+                        <option value="snappy">Snappy</option>
+                        <option value="lz4">LZ4</option>
+                        <option value="zstd">ZSTD</option>
+                    </select>
+                </div>
+                <div class="form-group" style="flex: 1; margin-bottom: 0;"><label>Required Acks</label>
+                    <select id="kafka-acks" style="width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 8px; border-radius: var(--radius); outline: none;">
+                        <option value="1">Leader (1)</option>
+                        <option value="0">None (0)</option>
+                        <option value="all">All (-1)</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                <div class="form-group" style="flex: 1; margin-bottom: 0;"><label>Timeout (sec)</label><input type="number" id="kafka-timeout" value="10" min="1"></div>
+                <div class="form-group" style="flex: 1; margin-bottom: 0;"><label>Batch Size</label><input type="number" id="kafka-batch-size" value="0" min="0"></div>
+                <div class="form-group" style="flex: 1; margin-bottom: 0;"><label>Batch Timeout (ms)</label><input type="number" id="kafka-batch-timeout" value="0" min="0"></div>
+            </div>
+            <button class="btn-secondary" onclick="kafkaSaveConfig()" style="margin-bottom: 16px;"><i data-lucide="save"></i> Save Config</button>
+            <div id="kafka-topic-list" style="display: none; margin-top: 8px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+                <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;"><i data-lucide="list"></i> Available Topics</div>
+                <div id="kafka-topics" style="font-size: 11px; color: var(--text-secondary);"></div>
+            </div>
         </div>
     </div>
 
@@ -134,6 +204,7 @@
 <div class="tab" onclick="switchTab('runner')">Runner</div>
 <div class="tab" onclick="switchTab('hammer')">Hammer</div>
 <div class="tab" onclick="switchTab('sql')">SQL</div>
+<div class="tab" onclick="switchTab('kafka')">Kafka</div>
 <div class="tab" onclick="switchTab('scripts')">Pre-request</div>
 <div class="tab" onclick="switchTab('tests')">Post-request</div>
 <div class="tab" onclick="switchTab('note')">Note</div>
@@ -243,6 +314,34 @@
                         <div class="form-group" style="flex: 1; display: flex; flex-direction: column;"><label>SQL Query</label><textarea id="sql-query" style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius); resize: none; outline: none; font-family: monospace;"></textarea></div>
                         <div style="margin-top: 16px;"><button class="btn-primary" onclick="runSQL()"><i data-lucide="play"></i> Execute Query</button></div>
                         <div id="sql-results" style="margin-top: 24px; flex: 1; overflow: auto; border-top: 1px solid var(--border-color); padding-top: 16px;"></div>
+                    </div>
+                </div>
+                <div id="pane-kafka" class="pane">
+                    <div style="padding: 16px; background: var(--bg-sidebar); border-radius: 8px; border: 1px solid var(--border-color); flex: 1; display: flex; flex-direction: column;">
+                        <div style="font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 16px; display: flex; align-items: center; gap: 10px;"><i data-lucide="message-circle"></i> Kafka Message Producer</div>
+                        <div id="kafka-pane-status" style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                            <span id="kafka-pane-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #666; display: inline-block;"></span>
+                            <span id="kafka-pane-status-text">Connect via sidebar to send messages</span>
+                        </div>
+                        <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+                            <div class="form-group" style="margin-bottom: 0; flex: 1;"><label>Topic</label>
+                                <select id="kafka-send-topic" style="width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 8px; border-radius: var(--radius); outline: none;">
+                                    <option value="">-- Select Topic --</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0; width: 100px;"><label>Partition</label><input type="number" id="kafka-send-partition" value="-1" min="-1" style="width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 8px; border-radius: var(--radius); outline: none;"></div>
+                        </div>
+                        <div class="form-group"><label>Message Key</label><input type="text" id="kafka-send-key" placeholder="Optional message key"></div>
+                        <div class="form-group" style="flex: 1; display: flex; flex-direction: column;"><label>Message Value</label><textarea id="kafka-send-value" style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); color: white; padding: 12px; border-radius: var(--radius); resize: none; outline: none; font-family: monospace; min-height: 100px;" placeholder='{"event": "user_signup", "user_id": 123}'></textarea></div>
+                        <div class="form-group" style="margin-bottom: 16px;">
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">
+                                <span>Headers</span>
+                                <button class="sidebar-action-btn" onclick="kafkaAddHeaderRow()" style="margin-left: 8px;"><i data-lucide="plus" style="width: 12px;"></i> Add</button>
+                            </label>
+                            <div id="kafka-headers-list" style="margin-top: 8px;"></div>
+                        </div>
+                        <div style="margin-top: 16px;"><button class="btn-primary" onclick="kafkaSendMessage()"><i data-lucide="send"></i> Send Message</button></div>
+                        <div id="kafka-send-results" style="margin-top: 24px; flex: 1; overflow: auto; border-top: 1px solid var(--border-color); padding-top: 16px; font-family: monospace; font-size: 12px;"></div>
                     </div>
                 </div>
 <div id="pane-scripts" class="pane"><textarea id="req-prerequest-input" spellcheck="false" placeholder="// Pre-request Script (JavaScript)"></textarea></div>
