@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PostIt - API Client & Developer Tool</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-inner">
+            <a href="#" class="logo">PostIt</a>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#tech">Tech</a>
+                <a href="#quickstart">Quick Start</a>
+                <a href="https://github.com/kmokas/PostIt" target="_blank" class="nav-cta">GitHub</a>
+            </div>
+        </div>
+    </nav>
+
+    <section class="hero">
+        <div class="hero-bg"></div>
+        <div class="hero-content">
+            <span class="hero-badge">Local-First API Client</span>
+            <h1>PostIt</h1>
+            <p class="hero-subtitle">A modern, offline-capable, all-in-one API client <br>and developer tool built in Go.</p>
+            <div class="hero-actions">
+                <a href="#features" class="btn btn-primary">Explore Features</a>
+                <a href="#quickstart" class="btn btn-secondary">Quick Start</a>
+            </div>
+        </div>
+        <div class="hero-scroll">
+            <span>Scroll</span>
+            <div class="scroll-line"></div>
+        </div>
+    </section>
+
+    <section id="overview" class="section section-alt">
+        <div class="section-inner">
+            <div class="overview-grid">
+                <div class="overview-text">
+                    <h2>Everything you need,<br>nothing you don't.</h2>
+                    <p>PostIt is a powerful alternative to Postman, Insomnia, and Hoppscotch that runs entirely on your machine. No cloud, no accounts, no data leaving your network.</p>
+                    <p>Built with Go for performance and distributed as a single binary, PostIt gives you a full-featured API development environment with zero dependencies.</p>
+                    <div class="overview-stats">
+                        <div class="stat">
+                            <span class="stat-number">4</span>
+                            <span class="stat-label">UI Modes</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-number">15+</span>
+                            <span class="stat-label">Power Tools</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-number">1</span>
+                            <span class="stat-label">Binary</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="overview-code">
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span class="code-dot"></span>
+                            <span class="code-dot"></span>
+                            <span class="code-dot"></span>
+                        </div>
+                        <pre><code><span class="kw">go</span> build -o postit.exe ./cmd/postit
+<span class="kw">./postit.exe</span> --ui web --port 8080
+
+<span class="cm"># Ready at http://localhost:8080</span></code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="features" class="section">
+        <div class="section-inner">
+            <div class="section-header">
+                <h2>Features</h2>
+                <p>From REST to Kafka to load testing -- everything in one tool.</p>
+            </div>
+            <div class="features-grid">
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    </div>
+                    <h3>Request Builder</h3>
+                    <p>Full-featured HTTP client supporting GET, POST, PUT, DELETE, PATCH with raw JSON, form-data, GraphQL, and URL-encoded bodies. Headers with autocomplete, bearer token auth, and syntax-highlighted editors.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+                    </div>
+                    <h3>Variable System</h3>
+                    <p>Cascading variable resolution with local, environment, global, and OS-level scopes. Supports magic variables ($guid, $timestamp), interactive prompts, and O(1) environment lookups.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/><line x1="12" y1="22" x2="12" y2="15.5"/><polyline points="22 8.5 12 15.5 2 8.5"/></svg>
+                    </div>
+                    <h3>Script Engine</h3>
+                    <p>JavaScript-like pre-request and post-request scripts. Set and get variables with pm.collectionVariables, extract values from JSON responses, perform conditional logic, and chain requests.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    </div>
+                    <h3>Environments & Vault</h3>
+                    <p>Multiple environments (Local, Staging, Production) with secret variable encryption using AES-GCM and PBKDF2 with 100,000 iterations. Master password vault for sensitive data.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </div>
+                    <h3>History & Time Travel</h3>
+                    <p>Full request/response recording with time-travel debugging. Export as JSON, CSV, or HAR format. Mermaid.js sequence diagram visualization of your request history.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    </div>
+                    <h3>Response Viewer</h3>
+                    <p>JSON syntax highlighting with expand/collapse, HTML preview in iframe, auto JWT decoding, side-by-side diffing against a pinned baseline, and an advanced JSON filter engine.</p>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <section class="section section-alt">
+        <div class="section-inner">
+            <div class="section-header">
+                <h2>Power Tools</h2>
+                <p>Beyond REST -- a full developer toolkit baked into one binary.</p>
+            </div>
+            <div class="tools-grid">
+
+                <div class="tool-item">
+                    <div class="tool-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    </div>
+                    <span>Load Testing (Hammer)</span>
+                </div>
+
+                <div class="tool-item">
+                    <div class="tool-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </div>
+                    <span>Data-Driven Runner</span>
+                </div>
+
+                <div class="tool-item">
+                    <div class="tool-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                    </div>
+                    <span>SQL Sidekick</span>
+                </div>
+
+                <div class="tool-item">
+                    <div class="tool-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><circle cx="12" cy="12" r="3"/></svg>
+                    </div>
+                    <span>WebSocket Client</span>
+                </div>
+
+                <div class="tool-item">
+                    <div class="tool-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="7.5" r="2.5"/><circle cx="12" cy="18" r="2.5"/><line x1="7.5" y1="8" x2="11" y2="16"/><path d="M14.5 6.5L17 9"/><path d="M17 9l2.5 5.5"/><path d="M17 9l4.5-2.5"/></svg>
+                    </div>
+                    <span>Kafka Producer</span>
+                </div>
+
+                <div class="tool-item">
+                    <div class="tool-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                    </div>
+                    <span>Mock Server</span>
+                </div>
+
+                <div class="tool-item">
+                    <div class="tool-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg>
+                    </div>
+                    <span>Security Fuzzer</span>
+                </div>
+
+                <div class="tool-item">
+                    <div class="tool-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><path d="M10.4 10.4l5.2-5.2"/><path d="M8.4 13.6l-2.8 2.8"/></svg>
+                    </div>
+                    <span>Visual Workflows</span>
+                </div>
+
+                <div class="tool-item">
+                    <div class="tool-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 15c6.667-6 13.333 0 20-6"/><path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993"/><path d="M15 22c-1.798-1.998-2.518-3.995-2.807-5.993"/></svg>
+                    </div>
+                    <span>Proxy Server</span>
+                </div>
+
+                <div class="tool-item">
+                    <div class="tool-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                    </div>
+                    <span>GraphQL Explorer</span>
+                </div>
+
+                <div class="tool-item">
+                    <div class="tool-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    </div>
+                    <span>API Documentation Generator</span>
+                </div>
+
+                <div class="tool-item">
+                    <div class="tool-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                    </div>
+                    <span>Import / Export</span>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <section id="tech" class="section">
+        <div class="section-inner">
+            <div class="section-header">
+                <h2>Built With</h2>
+                <p>A performance-focused stack from the ground up.</p>
+            </div>
+            <div class="tech-grid">
+                <div class="tech-card">
+                    <span class="tech-name">Go</span>
+                    <span class="tech-desc">Core language, single binary</span>
+                </div>
+                <div class="tech-card">
+                    <span class="tech-name">Vanilla JS</span>
+                    <span class="tech-desc">Lightweight SPA frontend</span>
+                </div>
+                <div class="tech-card">
+                    <span class="tech-name">SQLite</span>
+                    <span class="tech-desc">Embedded database</span>
+                </div>
+                <div class="tech-card">
+                    <span class="tech-name">Chart.js</span>
+                    <span class="tech-desc">Live load testing charts</span>
+                </div>
+                <div class="tech-card">
+                    <span class="tech-name">Mermaid.js</span>
+                    <span class="tech-desc">Sequence diagram visualization</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="quickstart" class="section section-alt">
+        <div class="section-inner">
+            <div class="section-header">
+                <h2>Quick Start</h2>
+                <p>Get up and running in seconds.</p>
+            </div>
+            <div class="quickstart-steps">
+                <div class="step">
+                    <div class="step-number">01</div>
+                    <div class="step-content">
+                        <h3>Build</h3>
+                        <div class="code-block code-inline">
+                            <pre><code>go build -o postit.exe ./cmd/postit</code></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">02</div>
+                    <div class="step-content">
+                        <h3>Run (Web UI)</h3>
+                        <div class="code-block code-inline">
+                            <pre><code>./postit.exe --ui web --port 8080</code></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">03</div>
+                    <div class="step-content">
+                        <h3>Open</h3>
+                        <p>Navigate to <a href="http://localhost:8080" class="link">http://localhost:8080</a> and start building requests.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="quickstart-extra">
+                <h3>Other Modes</h3>
+                <div class="modes-list">
+                    <div class="mode-item">
+                        <code>./postit.exe --ui tui</code>
+                        <span>Terminal UI</span>
+                    </div>
+                    <div class="mode-item">
+                        <code>./postit.exe --ui cli</code>
+                        <span>Interactive CLI</span>
+                    </div>
+                    <div class="mode-item">
+                        <code>./postit.exe run --collection ./output/history.json</code>
+                        <span>Headless / CI/CD</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="footer-inner">
+            <div class="footer-top">
+                <div>
+                    <h4>PostIt</h4>
+                    <p>Local-first API client and developer tool.</p>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/kmokas/PostIt" target="_blank">GitHub</a>
+                    <a href="#features">Features</a>
+                    <a href="#quickstart">Quick Start</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>&copy; 2026 PostIt. Open source under the MIT License.</span>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>
