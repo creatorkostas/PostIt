@@ -35,7 +35,7 @@ func main() {
 		return
 	}
 
-	uiType := flag.String("ui", "web", "UI type to use: tui, cli, or web")
+	uiType := flag.String("ui", "web", "UI type to use: wails, web, tui, or cli")
 	port := flag.Int("port", 8080, "Port for Web UI")
 	enableMock := flag.Bool("mock", false, "Enable Mock Server (for Web UI)")
 	importPaths := flag.String("import", "", "Paths to Postman collection JSON to import (comma-separated)")
@@ -43,7 +43,7 @@ func main() {
 
 	store := storage.NewManager("output")
 	if err := store.Init(); err != nil {
-	        log.Fatal("Failed to initialize storage", "error", err)
+		log.Fatal("Failed to initialize storage", "error", err)
 	}
 
 	proc := processor.NewScriptProcessor(store)
@@ -54,66 +54,67 @@ func main() {
 	finalRequests := []models.RequestInfo{}
 
 	if *importPaths != "" {
-	        paths := strings.Split(*importPaths, ",")
-	        orderCounter := 0
-	        for _, path := range paths {
-	                path = strings.TrimSpace(path)
-	                if path == "" {
-	                        continue
-	                }
-	                data, err := os.ReadFile(path)
-	                if err != nil {
-	                        log.Warn("Error reading import file", "path", path, "error", err)
-	                        continue
-	                }
+		paths := strings.Split(*importPaths, ",")
+		orderCounter := 0
+		for _, path := range paths {
+			path = strings.TrimSpace(path)
+			if path == "" {
+				continue
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				log.Warn("Error reading import file", "path", path, "error", err)
+				continue
+			}
 
-	                _, requests, err := processor.ParsePostmanCollection(data)
-	                if err != nil {
-	                        log.Warn("Error parsing collection", "path", path, "error", err)
-	                        continue
-	                }
+			_, requests, err := processor.ParsePostmanCollection(data)
+			if err != nil {
+				log.Warn("Error parsing collection", "path", path, "error", err)
+				continue
+			}
 
-	                for _, fresh := range requests {
-	                        fresh.Order = orderCounter
-	                        orderCounter++
-	                        finalRequests = append(finalRequests, fresh)
-	                        store.SaveSingleRequest(fresh)
-	                }
-	        }
-	        collection.Info.Name = "Imported Collections"
-	        collection.Item = models.ReconstructItems(finalRequests)
-	} else {
-	        collection.Info.Name = "Local Collection"
-	        for _, req := range cache {
-	                finalRequests = append(finalRequests, req)
-	        }
-	        sort.Slice(finalRequests, func(i, j int) bool {
-	                return finalRequests[i].Order < finalRequests[j].Order
-	        })
-	        collection.Item = models.ReconstructItems(finalRequests)
-	}
-	// Setup graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Handle interrupt signals for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		log.Info("Shutdown signal received, cleaning up...")
-		cancel()
-		// Give components time to clean up
-		time.Sleep(100 * time.Millisecond)
-		// Close DB connections
-		if client != nil {
-			client.Close()
+			for _, fresh := range requests {
+				fresh.Order = orderCounter
+				orderCounter++
+				finalRequests = append(finalRequests, fresh)
+				store.SaveSingleRequest(fresh)
+			}
 		}
-		os.Exit(0)
-	}()
-
+		collection.Info.Name = "Imported Collections"
+		collection.Item = models.ReconstructItems(finalRequests)
+	} else {
+		collection.Info.Name = "Local Collection"
+		for _, req := range cache {
+			finalRequests = append(finalRequests, req)
+		}
+		sort.Slice(finalRequests, func(i, j int) bool {
+			return finalRequests[i].Order < finalRequests[j].Order
+		})
+		collection.Item = models.ReconstructItems(finalRequests)
+	}
 	switch *uiType {
+	case "wails":
+		if err := WailsRun(store, proc, client, collection, finalRequests, *enableMock); err != nil {
+			log.Fatal("Wails GUI Error", "error", err)
+		}
 	case "web":
+		// Setup graceful shutdown for web mode
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		go func() {
+			<-sigChan
+			log.Info("Shutdown signal received, cleaning up...")
+			cancel()
+			time.Sleep(100 * time.Millisecond)
+			if client != nil {
+				client.Close()
+			}
+			os.Exit(0)
+		}()
+
 		server := web.NewServer(store, proc, client, collection, finalRequests, *enableMock)
 		if err := server.Start(ctx, *port); err != nil {
 			log.Fatal("Web Server Error", "error", err)
@@ -162,7 +163,7 @@ func runCLI() {
 	if err != nil {
 		log.Fatal("Error reading collection", "error", err)
 	}
-	
+
 	_, requests, err := processor.ParsePostmanCollection(data)
 	if err != nil {
 		log.Fatal("Error parsing collection", "error", err)
