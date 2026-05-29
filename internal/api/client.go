@@ -37,6 +37,7 @@ type Client struct {
 	dbMu         sync.Mutex
 	dbOrder      *list.List // LRU tracking
 	dbStopCleanup chan struct{}
+	closeOnce    sync.Once
 }
 
 func NewClient(store *storage.Manager, proc *processor.ScriptProcessor) *Client {
@@ -90,17 +91,20 @@ func (c *Client) cleanupOldConnections() {
 }
 
 func (c *Client) Close() error {
-	// Signal cleanup worker to stop
-	close(c.dbStopCleanup)
+	var err error
+	c.closeOnce.Do(func() {
+		// Signal cleanup worker to stop
+		close(c.dbStopCleanup)
 
-	c.dbMu.Lock()
-	defer c.dbMu.Unlock()
-	for _, entry := range c.dbPool {
-		entry.db.Close()
-	}
-	c.dbPool = make(map[string]*dbConnEntry)
-	c.dbOrder.Init()
-	return nil
+		c.dbMu.Lock()
+		defer c.dbMu.Unlock()
+		for _, entry := range c.dbPool {
+			entry.db.Close()
+		}
+		c.dbPool = make(map[string]*dbConnEntry)
+		c.dbOrder.Init()
+	})
+	return err
 }
 
 func (c *Client) ExecuteRequest(ctx context.Context, req *models.Request) (string, map[string][]string, int, string) {
