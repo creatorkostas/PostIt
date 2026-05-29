@@ -24,22 +24,22 @@ var dangerousKeywords = []string{
 func normalizeQuery(query string) string {
 	// NFKC normalization handles compatibility characters
 	normalized := strings.Map(func(r rune) rune {
-		// Replace common homoglyphs
+		// Replace common homoglyphs (uppercase to match unicode.ToUpper on other chars)
 		switch r {
-		case '\u0430': // Cyrillic 'a' -> Latin 'a'
-			return 'a'
-		case '\u0435': // Cyrillic 'e' -> Latin 'e'
-			return 'e'
-		case '\u043E': // Cyrillic 'o' -> Latin 'o'
-			return 'o'
-		case '\u0440': // Cyrillic 'p' -> Latin 'p'
-			return 'p'
-		case '\u0441': // Cyrillic 'c' -> Latin 'c'
-			return 'c'
-		case '\u0445': // Cyrillic 'x' -> Latin 'x'
-			return 'x'
-		case '\u0456': // Cyrillic 'i' -> Latin 'i'
-			return 'i'
+		case '\u0430': // Cyrillic 'a' -> Latin 'A'
+			return 'A'
+		case '\u0435': // Cyrillic 'e' -> Latin 'E'
+			return 'E'
+		case '\u043E': // Cyrillic 'o' -> Latin 'O'
+			return 'O'
+		case '\u0440': // Cyrillic 'p' -> Latin 'P'
+			return 'P'
+		case '\u0441': // Cyrillic 'c' -> Latin 'C'
+			return 'C'
+		case '\u0445': // Cyrillic 'x' -> Latin 'X'
+			return 'X'
+		case '\u0456': // Cyrillic 'i' -> Latin 'I'
+			return 'I'
 		}
 		// Filter out non-printable and special control characters
 		if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {

@@ -5,6 +5,7 @@ import (
 	"postit/internal/models"
 	"postit/internal/processor"
 	"postit/internal/storage"
+	"strings"
 	"time"
 )
 
@@ -44,6 +45,12 @@ func (r *Runner) RunIteration(ctx context.Context, req models.RequestInfo, data 
 		body, _, statusCode, statusText := r.Client.ExecuteRequestWithLocal(ctx, req.Request, localVars)
 		duration := (time.Now().UnixNano() / int64(time.Millisecond)) - startTime
 
+		// Populate Error field when request failed
+		var errMsg string
+		if statusCode == 0 && strings.HasPrefix(statusText, "Error:") {
+			errMsg = statusText
+		}
+
 		// Post-request scripts (Tests)
 		r.Processor.RunScriptsWithLocal(req.Events, "test", []byte(body), nil, req.Request.Header, localVars)
 
@@ -52,6 +59,7 @@ func (r *Runner) RunIteration(ctx context.Context, req models.RequestInfo, data 
 			StatusCode: statusCode,
 			StatusText: statusText,
 			Duration:   duration,
+			Error:      errMsg,
 		})
 	}
 
