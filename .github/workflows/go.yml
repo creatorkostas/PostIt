@@ -7,20 +7,52 @@ on:
 permissions:
   contents: write
 jobs:
-  # --- PR checks: just build + test, no release ---
+  # --- PR checks: build + test + lint + cross-compile check ---
   check:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.25'
+        go-version-file: go.mod
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    - name: Lint
+      if: runner.os == 'Linux'
+      uses: golangci/golangci-lint-action@v6
+      with:
+        version: latest
+    - name: Govulncheck
+      continue-on-error: true
+      run: |
+        go install golang.org/x/vuln/cmd/govulncheck@latest
+        govulncheck ./...
     - name: Build
       run: go build -v ./...
-    - name: Test
-      run: go test -v ./...
+    - name: Cross-compile check
+      if: runner.os == 'Linux'
+      run: |
+        GOOS=linux   GOARCH=arm64 go build -o /tmp/cross-check ./cmd/postit
+        GOOS=windows GOARCH=amd64 go build -o /tmp/cross-check ./cmd/postit
+        GOOS=darwin  GOARCH=amd64 go build -o /tmp/cross-check ./cmd/postit
+        GOOS=darwin  GOARCH=arm64 go build -o /tmp/cross-check ./cmd/postit
+    - name: Test with coverage
+      run: go test -v -coverprofile=coverage.out ./...
+    - name: Upload coverage artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-${{ runner.os }}-${{ github.sha }}
+        path: coverage.out
   # --- Push to main: build + test + minor release ---
   release:
     if: github.event_name == 'push' && github.ref_name == 'main'
@@ -28,25 +60,33 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        fetch-depth: 0          # needed to see all tags
+        fetch-depth: 0
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.25'
+        go-version-file: go.mod
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
     - name: Build
       run: go build -v ./...
-    - name: Test
-      run: go test -v ./...
+    - name: Test with coverage
+      run: go test -v -coverprofile=coverage.out ./...
+    - name: Upload coverage artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-${{ github.sha }}
+        path: coverage.out
     - name: Bump minor version
       id: tag
       run: |
-        # get latest tag or default to v0.0.0
         latest=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-        # strip the leading v
         version="${latest#v}"
-        # split into major.minor.patch
         IFS='.' read -r major minor patch <<< "$version"
-        # bump minor, reset patch
         new_minor=$((minor + 1))
         new_tag="v${major}.${new_minor}.0"
         echo "new_tag=$new_tag" >> "$GITHUB_OUTPUT"
@@ -65,16 +105,12 @@ jobs:
     - name: Generate release notes
       id: notes
       run: |
-        prev_tag="${{ steps.tag.outputs.new_tag }}"
-        # get the tag before this one for changelog
         prev=$(git tag --sort=-version:refname | head -2 | tail -1 || echo "")
         if [ -z "$prev" ]; then
-          notes="Initial release."
+          echo "Initial release." > release_notes.txt
         else
-          notes=$(git log --oneline --no-decorate "$prev".."${{ steps.tag.outputs.new_tag }}")
+          git shortlog "$prev".."${{ steps.tag.outputs.new_tag }}" > release_notes.txt
         fi
-        # write to file to avoid multiline issues
-        echo "$notes" > release_notes.txt
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:

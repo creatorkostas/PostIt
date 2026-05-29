@@ -1,0 +1,44 @@
+# Auto-labels for PRs based on changed file paths
+# See https://github.com/actions/labeler
+
+# Core components
+cli:
+  - cmd/**/*
+
+gui:
+  - gui/**/*
+
+website:
+  - website/**/*
+
+docs:
+  - docs/**/*
+
+# Internal modules
+api:
+  - internal/api/**/*
+
+storage:
+  - internal/storage/**/*
+
+tui:
+  - internal/tui/**/*
+
+models:
+  - internal/models/**/*
+
+processor:
+  - internal/processor/**/*
+
+wailsapp:
+  - internal/wailsapp/**/*
+
+web:
+  - internal/web/**/*
+
+assets:
+  - internal/assets/**/*
+
+# Infrastructure
+ci:
+  - .github/**/*
