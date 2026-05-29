@@ -23,6 +23,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Tidy dependencies
+        run: go mod tidy
+
       - name: Build
         run: go build -v ./...
 
